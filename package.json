@@ -1,0 +1,26 @@
+{
+  "name": "transport-sync-poc",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.55.0",
+    "airtable": "^0.12.2",
+    "dotenv": "^17.2.1",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+    "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "sync": "node -e \"require('./src/sync-engine'); new (require('./src/sync-engine'))().runFullSync()\""
+  }
+}
