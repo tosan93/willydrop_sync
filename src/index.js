@@ -4,41 +4,39 @@ const config = require('./config');
 
 const syncEngine = new SyncEngine();
 
-// Manual sync for testing
 async function runManualSync() {
-    console.log('Manual sync started...');
+    console.log('[sync] Manual sync started...');
     await syncEngine.runFullSync();
+    console.log('[sync] Manual sync finished.');
 }
 
-// Scheduled sync
 function startScheduledSync() {
-    const cronPattern = `*/${config.sync.intervalMinutes} * * * *`; // Every N minutes
-    
-    console.log(`📅 Starting scheduled sync every ${config.sync.intervalMinutes} minutes...`);
-    
+    const cronPattern = `*/${config.sync.intervalMinutes} * * * *`;
+    console.log(`[sync] Scheduling sync every ${config.sync.intervalMinutes} minute(s) (cron: ${cronPattern}).`);
+
     cron.schedule(cronPattern, async () => {
-        console.log(`⏰ Scheduled sync triggered at ${new Date().toLocaleString()}`);
-        await syncEngine.runFullSync();
+        console.log(`[sync] Scheduled sync triggered at ${new Date().toISOString()}`);
+        try {
+            await syncEngine.runFullSync();
+        } catch (error) {
+            console.error('[sync] Scheduled sync failed:', error.message);
+        }
     });
 }
 
-// Main execution
 async function main() {
-    console.log('🎬 Transport Sync PoC Starting...');
-    
-    // Run initial sync
+    console.log('[sync] Transport Sync PoC starting...');
     await runManualSync();
-    
-    // Start scheduled sync
     startScheduledSync();
-    
-    console.log('✨ Sync engine is running! Press Ctrl+C to stop.');
+    console.log('[sync] Sync engine is running. Press Ctrl+C to stop.');
 }
 
-// Handle graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n👋 Shutting down sync engine...');
+    console.log('\n[sync] Shutting down sync engine...');
     process.exit(0);
 });
 
-main().catch(console.error);
+main().catch(error => {
+    console.error('[sync] Fatal error during startup:', error.message);
+    process.exit(1);
+});

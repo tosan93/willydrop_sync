@@ -1,166 +1,217 @@
 const AirtableClient = require('./airtable-client');
 const SupabaseClient = require('./supabase-client');
 
+const CAR_FIELDS = [
+    'external_id',
+    'make',
+    'model',
+    'vin',
+    'license_plate',
+    'status',
+    'customer_id',
+    'pickup_location_id',
+    'delivery_location_id',
+    'earliest_availability_date',
+    'pick_up_date',
+    'special_instructions',
+    'carrier_rate',
+    'customer_rate',
+    'priority',
+    'delivery_date_actual',
+    'delivery_date_customer_view',
+    'delivery_date_quoted',
+    'distance'
+];
+
+const NUMERIC_FIELDS = ['carrier_rate', 'customer_rate', 'distance'];
+const REQUIRED_FIELDS = ['make', 'model'];
+
 class SyncEngine {
     constructor() {
         this.airtable = new AirtableClient();
         this.supabase = new SupabaseClient();
-        
-        // Correct field mapping based on your Airtable
-        this.fieldMapping = {
-            // Airtable field name : Code field name
-            'Name': 'name',
-            'Pickup Address': 'pickup_address',
-            'Pickup Latitude': 'pickup_lat',        // ← Was "Pickup Lat"
-            'Pickup Longitude': 'pickup_lng',       // ← Was "Pickup Lng" 
-            'Delivery Address': 'delivery_address',
-            'Delivery Latitude': 'delivery_lat',    // ← Was "Delivery Lat"
-            'Delivery Longitude': 'delivery_lng',   // ← Was "Delivery Lng"
-            'Price (EUR)': 'price_eur',             // ← Was "Price EUR"
-            'Status': 'status',
-            'Urgency': 'urgency',
-            'Country From': 'country_from',
-            'Country To': 'country_to',
-            'Postcode From': 'postcode_from',
-            'Postcode To': 'postcode_to'
-        };
     }
-    
-       async runFullSync() {
-        console.log('🚀 Starting full bidirectional sync...');
+
+    async runFullSync() {
+        console.log('[sync] Starting full bidirectional sync...');
         await this.syncAirtableToSupabase();
         await this.syncSupabaseToAirtable();
-        console.log('🎉 Full sync complete!');
+        console.log('[sync] Full sync complete.');
     }
 
     async syncAirtableToSupabase() {
-        console.log('🔄 Starting Airtable → Supabase sync...');
-        
-        try {
-            const airtableRecords = await this.airtable.getAllRecords();
-            console.log(`Found ${airtableRecords.length} records in Airtable`);
-            
-            for (const record of airtableRecords) {
-                await this.syncRecordToSupabase(record);
+        console.log('[sync] Processing Airtable -> Supabase changes...');
+
+        let processed = 0;
+        const airtableRecords = await this.airtable.getAllRecords();
+
+        for (const record of airtableRecords) {
+            try {
+                await this.upsertSupabaseFromAirtable(record);
+                processed += 1;
+            } catch (error) {
+                console.error(`[sync] Failed to sync Airtable record ${record.airtable_id}:`, error.message);
             }
-            
-            console.log('✅ Airtable → Supabase sync complete');
-        } catch (error) {
-            console.error('❌ Airtable → Supabase sync failed:', error);
         }
+
+        console.log(`[sync] Airtable -> Supabase processed ${processed} records.`);
     }
 
     async syncSupabaseToAirtable() {
-        console.log('🔄 Starting Supabase → Airtable sync...');
-        
-        try {
-            const supabaseRecords = await this.supabase.getAllTransports();
-            console.log(`Found ${supabaseRecords.length} records in Supabase`);
-            
-            for (const record of supabaseRecords) {
-                if (!record.airtable_id) {
-                    // Record doesn't exist in Airtable, create it
-                    await this.createRecordInAirtable(record);
-                }
+        console.log('[sync] Processing Supabase -> Airtable changes...');
+
+        const [supabaseCars, airtableRecords] = await Promise.all([
+            this.supabase.getAllCars(),
+            this.airtable.getAllRecords()
+        ]);
+
+        const airtableBySupabaseId = new Map();
+        airtableRecords.forEach(record => {
+            if (record.supabase_id) {
+                airtableBySupabaseId.set(record.supabase_id, record);
             }
-            
-            console.log('✅ Supabase → Airtable sync complete');
-        } catch (error) {
-            console.error('❌ Supabase → Airtable sync failed:', error);
-        }
-    }
-
-
-    mapAirtableFields(airtableRecord) {
-        const mapped = { airtable_id: airtableRecord.airtable_id };
-        
-        Object.entries(this.fieldMapping).forEach(([airtableField, codeField]) => {
-            mapped[codeField] = airtableRecord[airtableField];
         });
-        
-        console.log('Mapped record:', mapped);
-        return mapped;
-    }
-    
-    async syncRecordToSupabase(airtableRecord) {
-        try {
-            // Map field names
-            const mappedRecord = this.mapAirtableFields(airtableRecord);
-            
-            // Validate required fields
-            if (!mappedRecord.name) {
-                console.error('❌ Missing required field: name');
-                return;
+
+        let processed = 0;
+
+        for (const car of supabaseCars) {
+            try {
+                const airtablePayload = this.mapSupabaseToAirtable(car);
+                const existingRecord = airtableBySupabaseId.get(car.id);
+
+                if (existingRecord) {
+                    await this.airtable.updateRecord(existingRecord.airtable_id, airtablePayload);
+                } else {
+                    const createdRecord = await this.airtable.createRecord(airtablePayload);
+                    airtableBySupabaseId.set(car.id, createdRecord);
+                }
+
+                processed += 1;
+            } catch (error) {
+                console.error(`[sync] Failed to sync Supabase car ${car.id}:`, error.message);
             }
-            
-            const existingRecord = await this.supabase.findByAirtableId(mappedRecord.airtable_id);
-            
-            const transportData = {
-                name: mappedRecord.name,
-                pickup_address: mappedRecord.pickup_address,
-                pickup_lat: mappedRecord.pickup_lat,
-                pickup_lng: mappedRecord.pickup_lng,
-                delivery_address: mappedRecord.delivery_address,
-                delivery_lat: mappedRecord.delivery_lat,
-                delivery_lng: mappedRecord.delivery_lng,
-                price_eur: mappedRecord.price_eur,
-                status: mappedRecord.status || 'available',
-                urgency: mappedRecord.urgency || 'normal',
-                country_from: mappedRecord.country_from,
-                country_to: mappedRecord.country_to,
-                postcode_from: mappedRecord.postcode_from,
-                postcode_to: mappedRecord.postcode_to,
-                airtable_id: mappedRecord.airtable_id
-            };
-            
-            console.log('Transport data to sync:', transportData);
-            
-            if (existingRecord) {
-                await this.supabase.updateTransport(existingRecord.id, transportData);
-                console.log(`📝 Updated: ${mappedRecord.name}`);
-            } else {
-                await this.supabase.createTransport(transportData);
-                console.log(`➕ Created: ${mappedRecord.name}`);
-            }
-            
-        } catch (error) {
-            console.error(`❌ Failed to sync ${mappedRecord.name}:`, error);
         }
+
+        console.log(`[sync] Supabase -> Airtable processed ${processed} records.`);
     }
 
-    async createRecordInAirtable(supabaseRecord) {
-        try {
-            // Map back to exact Airtable field names
-            const airtableData = {
-                'Name': supabaseRecord.name,
-                'Pickup Address': supabaseRecord.pickup_address,
-                'Pickup Latitude': supabaseRecord.pickup_lat,
-                'Pickup Longitude': supabaseRecord.pickup_lng,
-                'Delivery Address': supabaseRecord.delivery_address,
-                'Delivery Latitude': supabaseRecord.delivery_lat,
-                'Delivery Longitude': supabaseRecord.delivery_lng,
-                'Price (EUR)': supabaseRecord.price_eur,
-                'Status': supabaseRecord.status,
-                'Urgency': supabaseRecord.urgency,
-                'Country From': supabaseRecord.country_from,
-                'Country To': supabaseRecord.country_to,
-                'Postcode From': supabaseRecord.postcode_from,
-                'Postcode To': supabaseRecord.postcode_to
-            };
-            
-            console.log('Creating in Airtable:', airtableData);
-            
-            const airtableRecord = await this.airtable.createRecord(airtableData);
-            
-            // Update Supabase with Airtable ID
-            await this.supabase.updateTransport(supabaseRecord.id, {
-                airtable_id: airtableRecord.airtable_id
-            });
-            
-            console.log(`➕ Created in Airtable: ${supabaseRecord.name}`);
-        } catch (error) {
-            console.error(`❌ Failed to create in Airtable ${supabaseRecord.name}:`, error);
+    async upsertSupabaseFromAirtable(record) {
+        const supabasePayload = this.mapAirtableToSupabase(record);
+        const referencedSupabaseId = record.supabase_id;
+
+        let targetCar = null;
+
+        if (referencedSupabaseId) {
+            targetCar = await this.supabase.getCarById(referencedSupabaseId);
+            if (!targetCar) {
+                console.warn(`[sync] Airtable record ${record.airtable_id} references missing Supabase car ${referencedSupabaseId}.`);
+            }
         }
+
+        if (!targetCar && supabasePayload.external_id) {
+            targetCar = await this.supabase.findCarByExternalId(supabasePayload.external_id);
+        }
+
+        // Avoid nulling required fields on updates.
+        REQUIRED_FIELDS.forEach(field => {
+            if (supabasePayload[field] === null) {
+                delete supabasePayload[field];
+            }
+        });
+
+        if (targetCar) {
+            if (Object.keys(supabasePayload).length > 0) {
+                await this.supabase.updateCar(targetCar.id, supabasePayload);
+            }
+
+            if (!record.supabase_id || record.supabase_id !== targetCar.id) {
+                await this.airtable.updateRecord(record.airtable_id, { supabase_id: targetCar.id });
+            }
+
+            console.log(`[sync] Updated Supabase car ${targetCar.id} from Airtable record ${record.airtable_id}.`);
+            return;
+        }
+
+        this.ensureRequiredFields(record.airtable_id, supabasePayload);
+
+        const createdCar = await this.supabase.createCar({
+            ...supabasePayload,
+            id: referencedSupabaseId
+        });
+
+        if (!record.supabase_id || record.supabase_id !== createdCar.id) {
+            await this.airtable.updateRecord(record.airtable_id, { supabase_id: createdCar.id });
+        }
+
+        console.log(`[sync] Created Supabase car ${createdCar.id} from Airtable record ${record.airtable_id}.`);
+    }
+
+    ensureRequiredFields(recordId, payload) {
+        REQUIRED_FIELDS.forEach(field => {
+            if (payload[field] === undefined || payload[field] === null) {
+                throw new Error(`Missing required field "${field}" for Airtable record ${recordId}.`);
+            }
+        });
+    }
+
+    mapAirtableToSupabase(record) {
+        const payload = {};
+
+        CAR_FIELDS.forEach(field => {
+            const value = this.normalizeValue(field, record[field]);
+            if (value !== undefined) {
+                payload[field] = value;
+            }
+        });
+
+        return payload;
+    }
+
+    mapSupabaseToAirtable(car) {
+        const payload = {
+            supabase_id: car.id
+        };
+
+        CAR_FIELDS.forEach(field => {
+            const value = this.normalizeValue(field, car[field]);
+            if (value !== undefined) {
+                payload[field] = value;
+            }
+        });
+
+        return payload;
+    }
+
+    normalizeValue(field, value) {
+        if (value === undefined) {
+            return undefined;
+        }
+
+        if (value === null) {
+            return null;
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+
+            if (trimmed === '') {
+                return REQUIRED_FIELDS.includes(field) ? undefined : null;
+            }
+
+            if (NUMERIC_FIELDS.includes(field)) {
+                const numericValue = Number(trimmed);
+                return Number.isFinite(numericValue) ? numericValue : null;
+            }
+
+            return trimmed;
+        }
+
+        if (NUMERIC_FIELDS.includes(field)) {
+            const numericValue = typeof value === 'number' ? value : Number(value);
+            return Number.isFinite(numericValue) ? numericValue : null;
+        }
+
+        return value;
     }
 }
 

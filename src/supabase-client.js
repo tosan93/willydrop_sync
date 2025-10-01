@@ -1,90 +1,105 @@
 const { createClient } = require('@supabase/supabase-js');
+const { randomUUID } = require('crypto');
 const config = require('./config');
 
 class SupabaseClient {
     constructor() {
-        this.client = createClient(
-            config.supabase.url,
-            config.supabase.serviceKey
-        );
-    }
-
-    async getAllTransports() {
-        try {
-            const { data, error } = await this.client
-                .from('transports_testdb')
-                .select('*');
-            
-            if (error) throw error;
-            return data;
-        } catch (error) {
-            console.error('Error fetching Supabase transports:', error);
-            throw error;
+        if (!config.supabase.url || !config.supabase.serviceKey) {
+            throw new Error('Supabase credentials are missing. Check your environment configuration.');
         }
+
+        this.tableName = config.supabase.tableName;
+        this.client = createClient(config.supabase.url, config.supabase.serviceKey, {
+            auth: {
+                persistSession: false
+            }
+        });
     }
 
-    async createTransport(transport) {
-        try {
-            const { data, error } = await this.client
-                .from('transports_testdb')
-                .insert(transport)
-                .select()
-                .single();
-            
-            if (error) throw error;
-            return data;
-        } catch (error) {
-            console.error('Error creating Supabase transport:', error);
-            throw error;
-        }
+    async getAllCars() {
+        const { data, error } = await this.client
+            .from(this.tableName)
+            .select('*');
+
+        if (error) throw error;
+        return data || [];
     }
 
-    async updateTransport(id, updates) {
-        try {
-            const { data, error } = await this.client
-                .from('transports_testdb')
-                .update(updates)
-                .eq('id', id)
-                .select()
-                .single();
-            
-            if (error) throw error;
-            return data;
-        } catch (error) {
-            console.error('Error updating Supabase transport:', error);
-            throw error;
-        }
+    async getCarById(id) {
+        const { data, error } = await this.client
+            .from(this.tableName)
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data || null;
     }
 
-    async deleteTransport(id) {
-        try {
-            const { error } = await this.client
-                .from('transports_testdb')
-                .delete()
-                .eq('id', id);
-            
-            if (error) throw error;
-            return true;
-        } catch (error) {
-            console.error('Error deleting Supabase transport:', error);
-            throw error;
-        }
-    }
-
-    async findByAirtableId(airtableId) {
-        try {
-            const { data, error } = await this.client
-                .from('transports_testdb')
-                .select('*')
-                .eq('airtable_id', airtableId)
-                .single();
-            
-            if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
-            return data;
-        } catch (error) {
-            console.error('Error finding by Airtable ID:', error);
+    async findCarByExternalId(externalId) {
+        if (!externalId) {
             return null;
         }
+
+        const { data, error } = await this.client
+            .from(this.tableName)
+            .select('*')
+            .eq('external_id', externalId)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data || null;
+    }
+
+    async createCar(car) {
+        const payload = this.cleanPayload({ ...car });
+        payload.id = payload.id || randomUUID();
+
+        const { data, error } = await this.client
+            .from(this.tableName)
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async updateCar(id, updates) {
+        const payload = this.cleanPayload({ ...updates });
+
+        if (Object.keys(payload).length === 0) {
+            return this.getCarById(id);
+        }
+
+        const { data, error } = await this.client
+            .from(this.tableName)
+            .update(payload)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async deleteCar(id) {
+        const { error } = await this.client
+            .from(this.tableName)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        return true;
+    }
+
+    cleanPayload(payload) {
+        return Object.entries(payload).reduce((acc, [key, value]) => {
+            if (value !== undefined) {
+                acc[key] = value;
+            }
+            return acc;
+        }, {});
     }
 }
 
