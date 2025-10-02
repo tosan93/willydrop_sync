@@ -8,9 +8,9 @@ const CAR_FIELDS = [
     'vin',
     'license_plate',
     'status',
-    'customer_id',
-    'pickup_location_id',
-    'delivery_location_id',
+    // 'customer_id', // TODO: sync linked company once mapping is ready
+    // 'pickup_location_id', // TODO: sync linked pickup location once mapping is ready
+    // 'delivery_location_id', // TODO: sync linked delivery location once mapping is ready
     'earliest_availability_date',
     'pick_up_date',
     'special_instructions',
