@@ -41,6 +41,28 @@ function normalizeMapping(raw) {
     }, {});
 }
 
+function normalizeMappingCollection(raw) {
+    if (!isObject(raw)) {
+        return {};
+    }
+
+    const entries = Object.entries(raw);
+    const hasTableNamespaces = entries.some(([key, value]) =>
+        isObject(value) && Object.keys(value).some(innerKey => typeof value[innerKey] === 'string' || isObject(value[innerKey]))
+    );
+
+    if (raw.cars || raw.locations || hasTableNamespaces) {
+        return entries.reduce((acc, [tableKey, value]) => {
+            acc[tableKey] = normalizeMapping(value);
+            return acc;
+        }, {});
+    }
+
+    return {
+        cars: normalizeMapping(raw)
+    };
+}
+
 function parseAirtableFieldMapping(raw) {
     if (!raw) {
         return {};
@@ -104,8 +126,7 @@ function loadMappingFromFile() {
         try {
             const resolvedPath = require.resolve(filePath);
             delete require.cache[resolvedPath];
-            const mapping = require(resolvedPath);
-            return normalizeMapping(mapping);
+            return require(resolvedPath);
         } catch (error) {
             if (error.code === 'MODULE_NOT_FOUND') {
                 continue;
@@ -118,28 +139,39 @@ function loadMappingFromFile() {
     return {};
 }
 
-function loadAirtableFieldMapping() {
-    const fileMapping = loadMappingFromFile();
+function loadAirtableFieldMappings() {
+    const fileMappings = normalizeMappingCollection(loadMappingFromFile());
     const envMapping = parseAirtableFieldMapping(process.env.AIRTABLE_FIELD_MAP);
 
     return {
-        ...fileMapping,
-        ...envMapping
+        cars: {
+            ...(fileMappings.cars || {}),
+            ...envMapping
+        },
+        locations: fileMappings.locations || {}
     };
 }
+
+const airtableMappings = loadAirtableFieldMappings();
 
 module.exports = {
     supabase: {
         url: process.env.SUPABASE_URL,
         serviceKey: process.env.SUPABASE_SERVICE_KEY,
-        tableName: process.env.SUPABASE_CARS_TABLE || 'cars'
+        tableName: process.env.SUPABASE_CARS_TABLE || 'cars',
+        locationsTableName: process.env.SUPABASE_LOCATIONS_TABLE || 'locations'
     },
     airtable: {
         token: process.env.AIRTABLE_TOKEN,
         baseId: process.env.AIRTABLE_BASE_ID,
         tableId: process.env.AIRTABLE_TABLE_ID,
         tableName: process.env.AIRTABLE_TABLE_NAME || 'Cars',
-        fieldMapping: loadAirtableFieldMapping()
+        fieldMapping: airtableMappings.cars,
+        locations: {
+            tableId: process.env.AIRTABLE_LOCATIONS_TABLE_ID,
+            tableName: process.env.AIRTABLE_LOCATIONS_TABLE_NAME || 'locations',
+            fieldMapping: airtableMappings.locations
+        }
     },
     sync: {
         intervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 2

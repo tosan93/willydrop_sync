@@ -6,16 +6,22 @@ const AIRTABLE_API_HOST = 'api.airtable.com';
 const IGNORED_WRITE_KEYS = new Set(['airtable_id', 'last_modified', 'raw_fields', 'raw_fields_by_id']);
 
 class AirtableClient {
-    constructor() {
-        if (!config.airtable.token || !config.airtable.baseId) {
+    constructor(options = {}) {
+        const token = options.token ?? config.airtable.token;
+        const baseId = options.baseId ?? config.airtable.baseId;
+        const tableId = options.tableId ?? config.airtable.tableId ?? null;
+        const tableName = options.tableName ?? config.airtable.tableName;
+        const fieldMapping = options.fieldMapping ?? config.airtable.fieldMapping ?? {};
+
+        if (!token || !baseId) {
             throw new Error('Airtable credentials are missing. Check your environment configuration.');
         }
 
-        this.apiKey = config.airtable.token;
-        this.baseId = config.airtable.baseId;
-        this.tableId = config.airtable.tableId || null;
-        this.tableName = config.airtable.tableName;
-        this.fieldMapping = config.airtable.fieldMapping || {};
+        this.apiKey = token;
+        this.baseId = baseId;
+        this.tableId = tableId || null;
+        this.tableName = tableName;
+        this.fieldMapping = fieldMapping;
 
         this.fieldIdByKey = {};
         this.fieldNameByKey = {};

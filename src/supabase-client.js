@@ -8,7 +8,8 @@ class SupabaseClient {
             throw new Error('Supabase credentials are missing. Check your environment configuration.');
         }
 
-        this.tableName = config.supabase.tableName;
+        this.carsTableName = config.supabase.tableName;
+        this.locationsTableName = config.supabase.locationsTableName || 'locations';
         this.client = createClient(config.supabase.url, config.supabase.serviceKey, {
             auth: {
                 persistSession: false
@@ -18,7 +19,7 @@ class SupabaseClient {
 
     async getAllCars() {
         const { data, error } = await this.client
-            .from(this.tableName)
+            .from(this.carsTableName)
             .select('*');
 
         if (error) throw error;
@@ -27,7 +28,7 @@ class SupabaseClient {
 
     async getCarById(id) {
         const { data, error } = await this.client
-            .from(this.tableName)
+            .from(this.carsTableName)
             .select('*')
             .eq('id', id)
             .maybeSingle();
@@ -42,7 +43,7 @@ class SupabaseClient {
         }
 
         const { data, error } = await this.client
-            .from(this.tableName)
+            .from(this.carsTableName)
             .select('*')
             .eq('external_id', externalId)
             .maybeSingle();
@@ -56,7 +57,7 @@ class SupabaseClient {
         payload.id = payload.id || randomUUID();
 
         const { data, error } = await this.client
-            .from(this.tableName)
+            .from(this.carsTableName)
             .insert(payload)
             .select()
             .single();
@@ -73,7 +74,7 @@ class SupabaseClient {
         }
 
         const { data, error } = await this.client
-            .from(this.tableName)
+            .from(this.carsTableName)
             .update(payload)
             .eq('id', id)
             .select()
@@ -85,12 +86,79 @@ class SupabaseClient {
 
     async deleteCar(id) {
         const { error } = await this.client
-            .from(this.tableName)
+            .from(this.carsTableName)
             .delete()
             .eq('id', id);
 
         if (error) throw error;
         return true;
+    }
+
+    async getAllLocations() {
+        const { data, error } = await this.client
+            .from(this.locationsTableName)
+            .select('*');
+
+        if (error) throw error;
+        return data || [];
+    }
+
+    async getLocationById(id) {
+        const { data, error } = await this.client
+            .from(this.locationsTableName)
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data || null;
+    }
+
+    async findLocationByAirtableId(airtableId) {
+        if (!airtableId) {
+            return null;
+        }
+
+        const { data, error } = await this.client
+            .from(this.locationsTableName)
+            .select('*')
+            .eq('airtable_id', airtableId)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data || null;
+    }
+
+    async createLocation(location) {
+        const payload = this.cleanPayload({ ...location });
+        payload.id = payload.id || randomUUID();
+
+        const { data, error } = await this.client
+            .from(this.locationsTableName)
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async updateLocation(id, updates) {
+        const payload = this.cleanPayload({ ...updates });
+
+        if (Object.keys(payload).length === 0) {
+            return this.getLocationById(id);
+        }
+
+        const { data, error } = await this.client
+            .from(this.locationsTableName)
+            .update(payload)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
     }
 
     cleanPayload(payload) {
