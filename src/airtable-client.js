@@ -9,9 +9,12 @@ class AirtableClient {
     constructor(options = {}) {
         const token = options.token ?? config.airtable.token;
         const baseId = options.baseId ?? config.airtable.baseId;
-        const tableId = options.tableId ?? config.airtable.tableId ?? null;
-        const tableName = options.tableName ?? config.airtable.tableName;
-        const fieldMapping = options.fieldMapping ?? config.airtable.fieldMapping ?? {};
+        const hasExplicitTableId = Object.prototype.hasOwnProperty.call(options, 'tableId');
+        const tableId = hasExplicitTableId ? options.tableId : (config.airtable.tableId ?? null);
+        const hasExplicitTableName = Object.prototype.hasOwnProperty.call(options, 'tableName');
+        const tableName = hasExplicitTableName && options.tableName ? options.tableName : config.airtable.tableName;
+        const hasExplicitFieldMapping = Object.prototype.hasOwnProperty.call(options, 'fieldMapping');
+        const fieldMapping = hasExplicitFieldMapping ? (options.fieldMapping || {}) : (config.airtable.fieldMapping ?? {});
 
         if (!token || !baseId) {
             throw new Error('Airtable credentials are missing. Check your environment configuration.');
@@ -60,7 +63,6 @@ class AirtableClient {
         this.base = new Airtable({ apiKey: this.apiKey }).base(this.baseId);
         this.table = this.base(tableIdentifier);
     }
-
     getCandidateNames(key) {
         if (this.candidateNamesCache.has(key)) {
             return this.candidateNamesCache.get(key);
@@ -341,3 +343,4 @@ class AirtableClient {
 }
 
 module.exports = AirtableClient;
+

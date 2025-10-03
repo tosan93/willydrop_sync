@@ -22,8 +22,8 @@ module.exports = {
         delivery_date_actual: { id: 'fldA35MI0qgyesQ4I', name: 'delivery_date_actual' },
         delivery_date_customer_view: { id: 'fld4IQjiyaXb9TMbN', name: 'delivery_date_customer_view' },
         delivery_date_quoted: { id: 'fldc6fKxpuW0BlHgt', name: 'delivery_date_quoted' },
-        supabase_id: { id: 'fldr8FMyLq4M6z1hY', name: 'supabase_id' },
         distance: { id: 'fldpTS0vXLuZz9zt3', name: 'distance' },
+        supabase_id: { id: 'fldr8FMyLq4M6z1hY', name: 'supabase_id' }
     },
     locations: {
         address_line1: { id: 'fldVl8bczklyUJzka', name: 'address_line1' },
@@ -35,5 +35,33 @@ module.exports = {
         longitude: { id: 'fldMfEYeGHai0FdYo', name: 'longitude' },
         created_at: { id: 'fldhUrfF42ngtswCX', name: 'created_at' },
         supabase_id: { id: 'fld95BhzFLnRYNdrw', name: 'supabase_id' }
+    },
+    companies: {
+        name: { id: 'fldo5mmDp47EcvmnY', name: 'name' },
+        type: { id: 'fldpme2DZWHG83boo', name: 'type' },
+        contact_person: { id: 'fldlBCZ7evxjlwJpI', name: 'contact_person' },
+        phone: { id: 'fldhahVyfDegCs5u2', name: 'phone' },
+        email: { id: 'fld3kv751mKVyJwOE', name: 'email' },
+        supabase_id: { id: 'fldpPwikw6RtK0IEb', name: 'supabase_id' }
+    },
+    loads: {
+        load_number: { id: 'fldIorE98ljoUY5Rf', name: 'load_number' },
+        carrier_id: { id: 'fldT1WDvvLudL1ByU', name: 'carrier_id' },
+        total_distance_km: { id: 'fldgcheD5SivspjrQ', name: 'total_distance_km' },
+        estimated_duration_hours: { id: 'fldJX5ApUUN5yziJP', name: 'estimated_duration_hours' },
+        driver_info: { id: 'fldChg0RBteKozd6K', name: 'driver_info' },
+        truck_trailer_info: { id: 'fldagZiwhvh5KEz45', name: 'truck_trailer_info' },
+        created_at: { id: 'fld4UhzTxSeEEYXuF', name: 'created_at' },
+        updated_at: { id: 'fldBz87R8XCxa4FXr', name: 'updated_at' },
+        load_status: { id: 'fldELOEMnb5OJVAQw', name: 'load_status' },
+        transport_rate: { id: 'fldsGE6jSaa2e1i0o', name: 'transport_rate' },
+        supabase_id: { id: 'fldFgtqw2TXJPyAHr', name: 'supabase_id' }
+    },
+    users: {
+        email: { id: 'fld8hEGIgneOTaCTr', name: 'email' },
+        company_id: { id: 'fldMtLqzTum9S9mav', name: 'company_id' },
+        is_active: { id: 'fldVWJL8i7SMxJXjH', name: 'is_active' },
+        created_at: { id: 'fldD1rXkJcJnMhRdt', name: 'created_at' },
+        supabase_id: { id: 'fldRZxLBxOyBV3loe', name: 'supabase_id' }
     }
 };

@@ -148,7 +148,10 @@ function loadAirtableFieldMappings() {
             ...(fileMappings.cars || {}),
             ...envMapping
         },
-        locations: fileMappings.locations || {}
+        locations: fileMappings.locations || {},
+        companies: fileMappings.companies || {},
+        loads: fileMappings.loads || {},
+        users: fileMappings.users || {}
     };
 }
 
@@ -159,7 +162,10 @@ module.exports = {
         url: process.env.SUPABASE_URL,
         serviceKey: process.env.SUPABASE_SERVICE_KEY,
         tableName: process.env.SUPABASE_CARS_TABLE || 'cars',
-        locationsTableName: process.env.SUPABASE_LOCATIONS_TABLE || 'locations'
+        locationsTableName: process.env.SUPABASE_LOCATIONS_TABLE || 'locations',
+        companiesTableName: process.env.SUPABASE_COMPANIES_TABLE || 'companies',
+        loadsTableName: process.env.SUPABASE_LOADS_TABLE || 'loads',
+        usersTableName: process.env.SUPABASE_USERS_TABLE || 'users'
     },
     airtable: {
         token: process.env.AIRTABLE_TOKEN,
@@ -169,11 +175,27 @@ module.exports = {
         fieldMapping: airtableMappings.cars,
         locations: {
             tableId: process.env.AIRTABLE_LOCATIONS_TABLE_ID,
-            tableName: process.env.AIRTABLE_LOCATIONS_TABLE_NAME || 'locations',
+            tableName: process.env.AIRTABLE_LOCATIONS_TABLE_NAME || 'Locations',
             fieldMapping: airtableMappings.locations
+        },
+        companies: {
+            tableId: process.env.AIRTABLE_COMPANIES_TABLE_ID,
+            tableName: process.env.AIRTABLE_COMPANIES_TABLE_NAME || 'Companies',
+            fieldMapping: airtableMappings.companies
+        },
+        loads: {
+            tableId: process.env.AIRTABLE_LOADS_TABLE_ID,
+            tableName: process.env.AIRTABLE_LOADS_TABLE_NAME || 'Loads',
+            fieldMapping: airtableMappings.loads
+        },
+        users: {
+            tableId: process.env.AIRTABLE_USERS_TABLE_ID,
+            tableName: process.env.AIRTABLE_USERS_TABLE_NAME || 'Users',
+            fieldMapping: airtableMappings.users
         }
     },
     sync: {
         intervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 2
     }
 };
+
