@@ -2,6 +2,32 @@ const config = require('./config');
 const AirtableClient = require('./airtable-client');
 const SupabaseClient = require('./supabase-client');
 
+const DEFAULT_SYNC_RULES = {
+    preventBlankOverwrite: true,
+    allowBlankOverwrite: {
+        airtableToSupabase: {
+            cars: [],
+            locations: []
+        },
+        supabaseToAirtable: {
+            cars: [],
+            locations: []
+        }
+    }
+};
+
+let userSyncRules = {};
+try {
+    userSyncRules = require('./sync-rules');
+} catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') {
+        throw error;
+    }
+}
+
+const SYNC_RULES = mergeSyncRules(DEFAULT_SYNC_RULES, userSyncRules);
+const EMPTY_FIELD_SET = new Set();
+
 const CAR_FIELDS = [
     'external_id',
     'make',
@@ -10,8 +36,6 @@ const CAR_FIELDS = [
     'license_plate',
     'status',
     // 'customer_id', // TODO: sync linked company once mapping is ready
-    // 'pickup_location_id', // TODO: sync linked pickup location once mapping is ready
-    // 'delivery_location_id', // TODO: sync linked delivery location once mapping is ready
     'earliest_availability_date',
     'pick_up_date',
     'special_instructions',
@@ -26,6 +50,7 @@ const CAR_FIELDS = [
 
 const CAR_NUMERIC_FIELDS = new Set(['carrier_rate', 'customer_rate', 'distance']);
 const CAR_REQUIRED_FIELDS = new Set(['make', 'model']);
+const CAR_LOCATION_LINK_FIELDS = ['pickup_location_id', 'delivery_location_id'];
 
 const LOCATION_FIELDS = [
     'address_line1',
@@ -44,6 +69,9 @@ class SyncEngine {
     constructor() {
         this.airtableCars = new AirtableClient();
         this.supabase = new SupabaseClient();
+        this.syncRules = SYNC_RULES;
+        this.preventBlankOverwrite = this.syncRules.preventBlankOverwrite !== false;
+        this.blankOverwriteAllowlist = this.buildBlankOverwriteAllowlist(this.syncRules.allowBlankOverwrite);
 
         const locationConfig = config.airtable.locations || {};
         if (locationConfig.tableId || locationConfig.tableName) {
@@ -59,31 +87,62 @@ class SyncEngine {
 
     async runFullSync() {
         console.log('[sync] Starting full bidirectional sync...');
-        await this.syncCarsAirtableToSupabase();
+
         if (this.airtableLocations) {
             await this.syncLocationsAirtableToSupabase();
         } else {
             console.log('[sync] Skipping Airtable -> Supabase locations (no table configured).');
         }
 
-        await this.syncCarsSupabaseToAirtable();
+        await this.syncCarsAirtableToSupabase();
+
         if (this.airtableLocations) {
             await this.syncLocationsSupabaseToAirtable();
         } else {
             console.log('[sync] Skipping Supabase -> Airtable locations (no table configured).');
         }
+
+        await this.syncCarsSupabaseToAirtable();
+
         console.log('[sync] Full sync complete.');
     }
 
     async syncCarsAirtableToSupabase() {
         console.log('[sync] Processing Airtable -> Supabase car changes...');
 
+        const locationRecordsPromise = this.airtableLocations
+            ? this.airtableLocations.getAllRecords()
+            : Promise.resolve([]);
+
+        const [airtableRecords, airtableLocationRecords, supabaseLocations] = await Promise.all([
+            this.airtableCars.getAllRecords(),
+            locationRecordsPromise,
+            this.supabase.getAllLocations()
+        ]);
+
+        const locationSupabaseIdByAirtableId = new Map();
+
+        airtableLocationRecords.forEach(locationRecord => {
+            const airtableId = this.normalizeId(locationRecord.airtable_id);
+            const supabaseId = this.normalizeId(locationRecord.supabase_id);
+            if (airtableId && supabaseId) {
+                locationSupabaseIdByAirtableId.set(airtableId, supabaseId);
+            }
+        });
+
+        supabaseLocations.forEach(location => {
+            const airtableId = this.normalizeId(location.airtable_id);
+            const supabaseId = this.normalizeId(location.id);
+            if (airtableId && supabaseId) {
+                locationSupabaseIdByAirtableId.set(airtableId, supabaseId);
+            }
+        });
+
         let processed = 0;
-        const airtableRecords = await this.airtableCars.getAllRecords();
 
         for (const record of airtableRecords) {
             try {
-                await this.upsertCarFromAirtable(record);
+                await this.upsertCarFromAirtable(record, { locationSupabaseIdByAirtableId });
                 processed += 1;
             } catch (error) {
                 console.error(`[sync] Failed to sync Airtable car ${record.airtable_id}:`, error.message);
@@ -114,9 +173,14 @@ class SyncEngine {
     async syncCarsSupabaseToAirtable() {
         console.log('[sync] Processing Supabase -> Airtable car changes...');
 
-        const [supabaseCars, airtableRecords] = await Promise.all([
+        const locationRecordsPromise = this.airtableLocations
+            ? this.airtableLocations.getAllRecords()
+            : Promise.resolve([]);
+
+        const [supabaseCars, airtableRecords, airtableLocationRecords] = await Promise.all([
             this.supabase.getAllCars(),
-            this.airtableCars.getAllRecords()
+            this.airtableCars.getAllRecords(),
+            locationRecordsPromise
         ]);
 
         const airtableBySupabaseId = new Map();
@@ -131,11 +195,20 @@ class SyncEngine {
             }
         });
 
+        const locationAirtableIdBySupabaseId = new Map();
+        airtableLocationRecords.forEach(locationRecord => {
+            const airtableId = this.normalizeId(locationRecord.airtable_id);
+            const supabaseId = this.normalizeId(locationRecord.supabase_id);
+            if (airtableId && supabaseId) {
+                locationAirtableIdBySupabaseId.set(supabaseId, airtableId);
+            }
+        });
+
         let processed = 0;
 
         for (const car of supabaseCars) {
             try {
-                const airtablePayload = this.mapCarSupabaseToAirtable(car);
+                const airtablePayload = this.mapCarSupabaseToAirtable(car, { locationAirtableIdBySupabaseId });
                 let existingRecord = airtableBySupabaseId.get(car.id);
 
                 if (!existingRecord && car.airtable_id) {
@@ -143,13 +216,22 @@ class SyncEngine {
                 }
 
                 if (existingRecord) {
-                    const updatedRecord = await this.airtableCars.updateRecord(existingRecord.airtable_id, airtablePayload);
+                    const updatePayload = this.preparePayloadForUpdate(airtablePayload, existingRecord, 'supabaseToAirtable', 'cars');
+                    let updatedRecord = existingRecord;
+
+                    if (Object.keys(updatePayload).length > 0) {
+                        updatedRecord = await this.airtableCars.updateRecord(existingRecord.airtable_id, updatePayload);
+                        console.log(`[sync] Updated Airtable car ${updatedRecord.airtable_id} from Supabase car ${car.id}.`);
+                    } else {
+                        console.log(`[sync] Airtable car ${existingRecord.airtable_id} already aligned with Supabase car ${car.id}.`);
+                    }
+
                     airtableBySupabaseId.set(car.id, updatedRecord);
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
                     await this.ensureSupabaseAirtableId(car, updatedRecord.airtable_id, 'car');
-                    console.log(`[sync] Updated Airtable car ${updatedRecord.airtable_id} from Supabase car ${car.id}.`);
                 } else {
-                    const createdRecord = await this.airtableCars.createRecord(airtablePayload);
+                    const createPayload = this.preparePayloadForUpdate(airtablePayload, null, 'supabaseToAirtable', 'cars');
+                    const createdRecord = await this.airtableCars.createRecord(createPayload);
                     airtableBySupabaseId.set(car.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
                     await this.ensureSupabaseAirtableId(car, createdRecord.airtable_id, 'car');
@@ -197,13 +279,22 @@ class SyncEngine {
                 }
 
                 if (existingRecord) {
-                    const updatedRecord = await this.airtableLocations.updateRecord(existingRecord.airtable_id, airtablePayload);
+                    const updatePayload = this.preparePayloadForUpdate(airtablePayload, existingRecord, 'supabaseToAirtable', 'locations');
+                    let updatedRecord = existingRecord;
+
+                    if (Object.keys(updatePayload).length > 0) {
+                        updatedRecord = await this.airtableLocations.updateRecord(existingRecord.airtable_id, updatePayload);
+                        console.log(`[sync] Updated Airtable location ${updatedRecord.airtable_id} from Supabase location ${location.id}.`);
+                    } else {
+                        console.log(`[sync] Airtable location ${existingRecord.airtable_id} already aligned with Supabase location ${location.id}.`);
+                    }
+
                     airtableBySupabaseId.set(location.id, updatedRecord);
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
                     await this.ensureSupabaseAirtableId(location, updatedRecord.airtable_id, 'location');
-                    console.log(`[sync] Updated Airtable location ${updatedRecord.airtable_id} from Supabase location ${location.id}.`);
                 } else {
-                    const createdRecord = await this.airtableLocations.createRecord(airtablePayload);
+                    const createPayload = this.preparePayloadForUpdate(airtablePayload, null, 'supabaseToAirtable', 'locations');
+                    const createdRecord = await this.airtableLocations.createRecord(createPayload);
                     airtableBySupabaseId.set(location.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
                     await this.ensureSupabaseAirtableId(location, createdRecord.airtable_id, 'location');
@@ -219,8 +310,8 @@ class SyncEngine {
         console.log(`[sync] Supabase -> Airtable processed ${processed} location records.`);
     }
 
-    async upsertCarFromAirtable(record) {
-        const supabasePayload = this.mapCarAirtableToSupabase(record);
+    async upsertCarFromAirtable(record, context = {}) {
+        const rawSupabasePayload = this.mapCarAirtableToSupabase(record, context);
         const referencedSupabaseId = record.supabase_id;
 
         let targetCar = null;
@@ -232,19 +323,22 @@ class SyncEngine {
             }
         }
 
-        if (!targetCar && supabasePayload.external_id) {
-            targetCar = await this.supabase.findCarByExternalId(supabasePayload.external_id);
+        if (!targetCar && rawSupabasePayload.external_id) {
+            targetCar = await this.supabase.findCarByExternalId(rawSupabasePayload.external_id);
         }
 
+        const cleanedPayload = { ...rawSupabasePayload };
         CAR_REQUIRED_FIELDS.forEach(field => {
-            if (supabasePayload[field] === null) {
-                delete supabasePayload[field];
+            if (cleanedPayload[field] === null) {
+                delete cleanedPayload[field];
             }
         });
 
         if (targetCar) {
-            if (Object.keys(supabasePayload).length > 0) {
-                await this.supabase.updateCar(targetCar.id, supabasePayload);
+            const updatePayload = this.preparePayloadForUpdate(cleanedPayload, targetCar, 'airtableToSupabase', 'cars');
+
+            if (Object.keys(updatePayload).length > 0) {
+                await this.supabase.updateCar(targetCar.id, updatePayload);
             }
 
             if (!record.supabase_id || record.supabase_id !== targetCar.id) {
@@ -255,12 +349,13 @@ class SyncEngine {
             return;
         }
 
-        this.ensureRequiredFields(record.airtable_id, supabasePayload, CAR_REQUIRED_FIELDS);
+        const createPayload = this.preparePayloadForUpdate(cleanedPayload, null, 'airtableToSupabase', 'cars');
+        this.ensureRequiredFields(record.airtable_id, createPayload, CAR_REQUIRED_FIELDS);
+        if (referencedSupabaseId) {
+            createPayload.id = referencedSupabaseId;
+        }
 
-        const createdCar = await this.supabase.createCar({
-            ...supabasePayload,
-            id: referencedSupabaseId
-        });
+        const createdCar = await this.supabase.createCar(createPayload);
 
         if (!record.supabase_id || record.supabase_id !== createdCar.id) {
             await this.airtableCars.updateRecord(record.airtable_id, { supabase_id: createdCar.id });
@@ -270,7 +365,7 @@ class SyncEngine {
     }
 
     async upsertLocationFromAirtable(record) {
-        const supabasePayload = this.mapLocationAirtableToSupabase(record);
+        const rawSupabasePayload = this.mapLocationAirtableToSupabase(record);
         const referencedSupabaseId = record.supabase_id;
 
         let targetLocation = null;
@@ -286,15 +381,18 @@ class SyncEngine {
             targetLocation = await this.supabase.findLocationByAirtableId(record.airtable_id);
         }
 
+        const cleanedPayload = { ...rawSupabasePayload };
         LOCATION_REQUIRED_FIELDS.forEach(field => {
-            if (supabasePayload[field] === null) {
-                delete supabasePayload[field];
+            if (cleanedPayload[field] === null) {
+                delete cleanedPayload[field];
             }
         });
 
         if (targetLocation) {
-            if (Object.keys(supabasePayload).length > 0) {
-                await this.supabase.updateLocation(targetLocation.id, supabasePayload);
+            const updatePayload = this.preparePayloadForUpdate(cleanedPayload, targetLocation, 'airtableToSupabase', 'locations');
+
+            if (Object.keys(updatePayload).length > 0) {
+                await this.supabase.updateLocation(targetLocation.id, updatePayload);
             }
 
             if (!record.supabase_id || record.supabase_id !== targetLocation.id) {
@@ -305,12 +403,13 @@ class SyncEngine {
             return;
         }
 
-        this.ensureRequiredFields(record.airtable_id, supabasePayload, LOCATION_REQUIRED_FIELDS);
+        const createPayload = this.preparePayloadForUpdate(cleanedPayload, null, 'airtableToSupabase', 'locations');
+        this.ensureRequiredFields(record.airtable_id, createPayload, LOCATION_REQUIRED_FIELDS);
+        if (referencedSupabaseId) {
+            createPayload.id = referencedSupabaseId;
+        }
 
-        const createdLocation = await this.supabase.createLocation({
-            ...supabasePayload,
-            id: referencedSupabaseId
-        });
+        const createdLocation = await this.supabase.createLocation(createPayload);
 
         if (!record.supabase_id || record.supabase_id !== createdLocation.id) {
             await this.airtableLocations.updateRecord(record.airtable_id, { supabase_id: createdLocation.id });
@@ -319,7 +418,7 @@ class SyncEngine {
         console.log(`[sync] Created Supabase location ${createdLocation.id} from Airtable record ${record.airtable_id}.`);
     }
 
-    mapCarAirtableToSupabase(record) {
+    mapCarAirtableToSupabase(record, options = {}) {
         const payload = {
             airtable_id: record.airtable_id
         };
@@ -334,6 +433,41 @@ class SyncEngine {
             }
         });
 
+        const locationMapSource = options.locationSupabaseIdByAirtableId || new Map();
+        const locationSupabaseIdByAirtableId = locationMapSource instanceof Map
+            ? locationMapSource
+            : new Map(Object.entries(locationMapSource || {}));
+
+        const extractFirstLinkedId = value => {
+            if (Array.isArray(value) && value.length > 0) {
+                const first = value[0];
+                if (typeof first === 'string') {
+                    return this.normalizeId(first);
+                }
+                if (first && typeof first === 'object' && typeof first.id === 'string') {
+                    return this.normalizeId(first.id);
+                }
+            }
+            return null;
+        };
+
+        CAR_LOCATION_LINK_FIELDS.forEach(field => {
+            const linkedValue = record[field];
+            const airtableLinkedId = extractFirstLinkedId(linkedValue);
+
+            if (!airtableLinkedId) {
+                payload[field] = null;
+                return;
+            }
+
+            const supabaseLocationId = locationSupabaseIdByAirtableId.get(airtableLinkedId);
+            if (supabaseLocationId) {
+                payload[field] = supabaseLocationId;
+            } else {
+                console.warn(`[sync] Airtable car ${record.airtable_id} references ${field} ${airtableLinkedId}, which is missing in Supabase locations.`);
+            }
+        });
+
         const primaryFieldValue = record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id);
         const airtableNameLabel = this.normalizeValue('airtable_id_name_label', primaryFieldValue);
         if (airtableNameLabel !== undefined) {
@@ -343,7 +477,7 @@ class SyncEngine {
         return payload;
     }
 
-    mapCarSupabaseToAirtable(car) {
+    mapCarSupabaseToAirtable(car, options = {}) {
         const payload = {
             supabase_id: car.id
         };
@@ -355,6 +489,27 @@ class SyncEngine {
             });
             if (value !== undefined) {
                 payload[field] = value;
+            }
+        });
+
+        const locationMapSource = options.locationAirtableIdBySupabaseId || new Map();
+        const locationAirtableIdBySupabaseId = locationMapSource instanceof Map
+            ? locationMapSource
+            : new Map(Object.entries(locationMapSource || {}));
+
+        CAR_LOCATION_LINK_FIELDS.forEach(field => {
+            const normalizedSupabaseLocationId = this.normalizeId(car[field]);
+
+            if (!normalizedSupabaseLocationId) {
+                payload[field] = [];
+                return;
+            }
+
+            const airtableLocationId = locationAirtableIdBySupabaseId.get(normalizedSupabaseLocationId);
+            if (airtableLocationId) {
+                payload[field] = [airtableLocationId];
+            } else {
+                console.warn(`[sync] Supabase car ${car.id} references ${field} ${normalizedSupabaseLocationId}, which is missing an Airtable record.`);
             }
         });
 
@@ -411,6 +566,104 @@ class SyncEngine {
         }
 
         return payload;
+    }
+
+    buildBlankOverwriteAllowlist(config = {}) {
+        return Object.entries(config || {}).reduce((acc, [direction, tableMap]) => {
+            acc[direction] = Object.entries(tableMap || {}).reduce((tableAcc, [tableName, fields]) => {
+                if (Array.isArray(fields)) {
+                    tableAcc[tableName] = new Set(fields);
+                }
+                return tableAcc;
+            }, {});
+            return acc;
+        }, {});
+    }
+
+    getBlankOverwriteAllowlist(direction, entityType) {
+        const directionRules = this.blankOverwriteAllowlist[direction];
+        if (!directionRules) {
+            return EMPTY_FIELD_SET;
+        }
+        return directionRules[entityType] || EMPTY_FIELD_SET;
+    }
+
+    preparePayloadForUpdate(payload = {}, existingRecord = null, direction, entityType) {
+        const cleanedPayload = this.removeUndefinedFromPayload(payload);
+
+        if (!this.preventBlankOverwrite) {
+            return { ...cleanedPayload };
+        }
+
+        const allowlist = this.getBlankOverwriteAllowlist(direction, entityType);
+        const result = {};
+
+        Object.entries(cleanedPayload).forEach(([field, value]) => {
+            if (!this.isBlankValue(value)) {
+                result[field] = value;
+                return;
+            }
+
+            if (allowlist.has(field)) {
+                result[field] = value;
+                return;
+            }
+
+            const currentValue = existingRecord ? existingRecord[field] : undefined;
+            if (currentValue !== undefined && !this.isBlankValue(currentValue)) {
+                return;
+            }
+
+            result[field] = value;
+        });
+
+        return result;
+    }
+
+    removeUndefinedFromPayload(payload = {}) {
+        return Object.entries(payload || {}).reduce((acc, [key, value]) => {
+            if (value !== undefined) {
+                acc[key] = value;
+            }
+            return acc;
+        }, {});
+    }
+
+    isBlankValue(value) {
+        if (value === undefined || value === null) {
+            return true;
+        }
+
+        if (typeof value === 'string') {
+            return value.trim().length === 0;
+        }
+
+        if (Array.isArray(value)) {
+            return value.length === 0;
+        }
+
+        if (typeof value === 'object') {
+            return Object.keys(value).length === 0;
+        }
+
+        return false;
+    }
+
+    normalizeId(value) {
+        if (value === undefined || value === null) {
+            return null;
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed.length > 0 ? trimmed : null;
+        }
+
+        if (typeof value === 'number' || typeof value === 'bigint') {
+            return String(value);
+        }
+
+        return null;
     }
 
     async ensureSupabaseAirtableId(entity, airtableId, entityType) {
@@ -477,3 +730,38 @@ class SyncEngine {
 }
 
 module.exports = SyncEngine;
+
+function mergeSyncRules(defaultRules, overrides) {
+    const base = defaultRules && typeof defaultRules === 'object'
+        ? JSON.parse(JSON.stringify(defaultRules))
+        : defaultRules;
+
+    if (!overrides || typeof overrides !== 'object') {
+        return base;
+    }
+
+    if (Array.isArray(overrides)) {
+        return overrides.slice();
+    }
+
+    const result = typeof base === 'object' && base !== null ? { ...base } : {};
+
+    Object.keys(overrides).forEach(key => {
+        const overrideValue = overrides[key];
+        const defaultValue = base && typeof base === 'object' ? base[key] : undefined;
+
+        if (Array.isArray(overrideValue)) {
+            result[key] = overrideValue.slice();
+            return;
+        }
+
+        if (overrideValue && typeof overrideValue === 'object') {
+            result[key] = mergeSyncRules(defaultValue || {}, overrideValue);
+            return;
+        }
+
+        result[key] = overrideValue;
+    });
+
+    return result;
+}
