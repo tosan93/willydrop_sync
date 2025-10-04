@@ -1027,10 +1027,15 @@ class SyncEngine {
             return { action: 'unchanged', supabaseId: targetCar?.id };
         }
 
+        if (targetCar && !airtableHasChanged && supabaseHasChanged) {
+            console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: Supabase has changed (AT: ${record.last_changed_for_sync}, SB: ${targetCar.last_changed_for_sync})`);
+            return { action: 'unchanged', supabaseId: targetCar.id };
+        }
+
         if (targetCar && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetCar.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCar.last_changed_for_sync})`);
+                console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: both changed, Supabase is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCar.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetCar.id };
             }
         }
@@ -1103,10 +1108,15 @@ class SyncEngine {
             return { action: 'unchanged', supabaseId: targetLocation?.id };
         }
 
+        if (targetLocation && !airtableHasChanged && supabaseHasChanged) {
+            console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: Supabase has changed (AT: ${record.last_changed_for_sync}, SB: ${targetLocation.last_changed_for_sync})`);
+            return { action: 'unchanged', supabaseId: targetLocation.id };
+        }
+
         if (targetLocation && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetLocation.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLocation.last_changed_for_sync})`);
+                console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: both changed, Supabase is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLocation.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetLocation.id };
             }
         }
@@ -1189,10 +1199,18 @@ class SyncEngine {
             return { action: 'unchanged', supabaseId: targetCompany?.id };
         }
 
+        // If Supabase changed but Airtable didn't, skip (Supabase is source of truth)
+        if (targetCompany && !airtableHasChanged && supabaseHasChanged) {
+            console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: Supabase has changed (AT: ${record.last_changed_for_sync}, SB: ${targetCompany.last_changed_for_sync})`);
+            return { action: 'unchanged', supabaseId: targetCompany.id };
+        }
+
+        // If both changed, check who is newer
         if (targetCompany && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetCompany.last_changed_for_sync, this.airtableSyncToleranceMs);
+            console.log(`[DEBUG AT->SB] Company ${record.airtable_id}: Both changed, comparison=${comparison}`);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCompany.last_changed_for_sync})`);
+                console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: both changed, Supabase is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCompany.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetCompany.id };
             }
         }
@@ -1278,10 +1296,15 @@ class SyncEngine {
             return { action: 'unchanged', supabaseId: targetUser?.id };
         }
 
+        if (targetUser && !airtableHasChanged && supabaseHasChanged) {
+            console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: Supabase has changed (AT: ${record.last_changed_for_sync}, SB: ${targetUser.last_changed_for_sync})`);
+            return { action: 'unchanged', supabaseId: targetUser.id };
+        }
+
         if (targetUser && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetUser.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetUser.last_changed_for_sync})`);
+                console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: both changed, Supabase is newer (AT: ${record.last_changed_for_sync}, SB: ${targetUser.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetUser.id };
             }
         }
@@ -1360,10 +1383,15 @@ class SyncEngine {
             return { action: 'unchanged', supabaseId: targetLoad?.id };
         }
 
+        if (targetLoad && !airtableHasChanged && supabaseHasChanged) {
+            console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: Supabase has changed (AT: ${record.last_changed_for_sync}, SB: ${targetLoad.last_changed_for_sync})`);
+            return { action: 'unchanged', supabaseId: targetLoad.id };
+        }
+
         if (targetLoad && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetLoad.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLoad.last_changed_for_sync})`);
+                console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: both changed, Supabase is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLoad.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetLoad.id };
             }
         }
@@ -1791,33 +1819,70 @@ class SyncEngine {
     preparePayloadForUpdate(payload = {}, existingRecord = null, direction, entityType) {
         const cleanedPayload = this.removeUndefinedFromPayload(payload);
 
-        if (!this.preventBlankOverwrite) {
-            return { ...cleanedPayload };
+        if (!existingRecord) {
+            if (!this.preventBlankOverwrite) {
+                return { ...cleanedPayload };
+            }
+
+            const allowlist = this.getBlankOverwriteAllowlist(direction, entityType);
+            const result = {};
+
+            Object.entries(cleanedPayload).forEach(([field, value]) => {
+                if (!this.isBlankValue(value)) {
+                    result[field] = value;
+                    return;
+                }
+
+                if (allowlist.has(field)) {
+                    result[field] = value;
+                    return;
+                }
+
+                result[field] = value;
+            });
+
+            return result;
         }
 
         const allowlist = this.getBlankOverwriteAllowlist(direction, entityType);
         const result = {};
 
         Object.entries(cleanedPayload).forEach(([field, value]) => {
-            if (!this.isBlankValue(value)) {
-                result[field] = value;
+            const currentValue = existingRecord[field];
+
+            // Normalize values for comparison
+            const normalizedValue = this.normalizeValueForComparison(value);
+            const normalizedCurrentValue = this.normalizeValueForComparison(currentValue);
+
+            // Skip if values are the same
+            if (normalizedValue === normalizedCurrentValue) {
                 return;
             }
 
-            if (allowlist.has(field)) {
-                result[field] = value;
-                return;
-            }
+            // Handle blank values with preventBlankOverwrite logic
+            if (this.preventBlankOverwrite && this.isBlankValue(value)) {
+                if (allowlist.has(field)) {
+                    result[field] = value;
+                    return;
+                }
 
-            const currentValue = existingRecord ? existingRecord[field] : undefined;
-            if (currentValue !== undefined && !this.isBlankValue(currentValue)) {
-                return;
+                if (!this.isBlankValue(currentValue)) {
+                    return;
+                }
             }
 
             result[field] = value;
         });
 
         return result;
+    }
+
+    normalizeValueForComparison(value) {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'string') return value.trim();
+        if (Array.isArray(value)) return JSON.stringify(value.sort());
+        if (typeof value === 'object') return JSON.stringify(value);
+        return value;
     }
 
     removeUndefinedFromPayload(payload = {}) {
