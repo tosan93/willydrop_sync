@@ -967,9 +967,9 @@ class SyncEngine {
         }
 
         if (targetCar) {
-            const comparison = this.compareTimestamps(record.last_synced, targetCar.last_changed_for_sync, this.airtableSyncToleranceMs);
+            const comparison = this.compareTimestamps(record.last_changed_for_sync, targetCar.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: destination is newer`);
+                console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCar.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetCar.id };
             }
         }
@@ -1040,9 +1040,9 @@ class SyncEngine {
         }
 
         if (targetLocation) {
-            const comparison = this.compareTimestamps(record.last_synced, targetLocation.last_changed_for_sync, this.airtableSyncToleranceMs);
+            const comparison = this.compareTimestamps(record.last_changed_for_sync, targetLocation.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: destination is newer`);
+                console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLocation.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetLocation.id };
             }
         }
@@ -1123,9 +1123,9 @@ class SyncEngine {
         }
 
         if (targetCompany) {
-            const comparison = this.compareTimestamps(record.last_synced, targetCompany.last_changed_for_sync, this.airtableSyncToleranceMs);
+            const comparison = this.compareTimestamps(record.last_changed_for_sync, targetCompany.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: destination is newer`);
+                console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCompany.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetCompany.id };
             }
         }
@@ -1209,9 +1209,9 @@ class SyncEngine {
         }
 
         if (targetUser) {
-            const comparison = this.compareTimestamps(record.last_synced, targetUser.last_changed_for_sync, this.airtableSyncToleranceMs);
+            const comparison = this.compareTimestamps(record.last_changed_for_sync, targetUser.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: destination is newer`);
+                console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetUser.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetUser.id };
             }
         }
@@ -1288,9 +1288,9 @@ class SyncEngine {
         }
 
         if (targetLoad) {
-            const comparison = this.compareTimestamps(record.last_synced, targetLoad.last_changed_for_sync, this.airtableSyncToleranceMs);
+            const comparison = this.compareTimestamps(record.last_changed_for_sync, targetLoad.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
-                console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: destination is newer`);
+                console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLoad.last_changed_for_sync})`);
                 return { action: 'unchanged', supabaseId: targetLoad.id };
             }
         }
