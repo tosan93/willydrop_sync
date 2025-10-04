@@ -612,7 +612,7 @@ class SyncEngine {
                 await this.supabase.updateUser(user.id, { last_synced: syncMarker });
             } catch (error) {
                 stats.errors += 1;
-                console.error([sync] Failed to sync Supabase user :, error.message);
+                console.error(`[sync] Failed to sync Supabase user ${user.id}:`, error.message);
             }
         }
 
