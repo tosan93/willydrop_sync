@@ -1392,7 +1392,15 @@ class SyncEngine {
         return payload;
     }
 
-    mapCarSupabaseToAirtable(car, options = {}) {\r\n        const payload = {\r\n            supabase_id: car.id\r\n        };\r\n\r\n        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(car.last_changed_for_sync, car.last_synced);\r\n        if (syncMarker) {\r\n            payload.last_synced = syncMarker;\r\n        }
+    mapCarSupabaseToAirtable(car, options = {}) {
+        const payload = {
+            supabase_id: car.id
+        };
+
+        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(car.last_changed_for_sync, car.last_synced);
+        if (syncMarker) {
+            payload.last_synced = syncMarker;
+        }
 
         CAR_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, car[field], {
@@ -1450,10 +1458,15 @@ class SyncEngine {
         return payload;
     }
 
-    mapLocationSupabaseToAirtable(location) {
+    mapLocationSupabaseToAirtable(location, options = {}) {
         const payload = {
             supabase_id: location.id
         };
+
+        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(location.last_changed_for_sync, location.last_synced);
+        if (syncMarker) {
+            payload.last_synced = syncMarker;
+        }
 
         LOCATION_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, location[field], {
@@ -1490,7 +1503,15 @@ class SyncEngine {
         return payload;
     }
 
-    mapCompanySupabaseToAirtable(company, options = {}) {\r\n        const payload = {\r\n            supabase_id: company.id\r\n        };\r\n\r\n        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(company.last_changed_for_sync, company.last_synced);\r\n        if (syncMarker) {\r\n            payload.last_synced = syncMarker;\r\n        }
+    mapCompanySupabaseToAirtable(company, options = {}) {
+        const payload = {
+            supabase_id: company.id
+        };
+
+        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(company.last_changed_for_sync, company.last_synced);
+        if (syncMarker) {
+            payload.last_synced = syncMarker;
+        }
 
         COMPANY_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, company[field], {
@@ -1547,7 +1568,15 @@ class SyncEngine {
         return payload;
     }
 
-    mapUserSupabaseToAirtable(user, options = {}) {\r\n        const payload = {\r\n            supabase_id: user.id\r\n        };\r\n\r\n        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(user.last_changed_for_sync, user.last_synced);\r\n        if (syncMarker) {\r\n            payload.last_synced = syncMarker;\r\n        }
+    mapUserSupabaseToAirtable(user, options = {}) {
+        const payload = {
+            supabase_id: user.id
+        };
+
+        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(user.last_changed_for_sync, user.last_synced);
+        if (syncMarker) {
+            payload.last_synced = syncMarker;
+        }
 
         USER_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, user[field], {
@@ -1628,6 +1657,11 @@ class SyncEngine {
         const payload = {
             supabase_id: load.id
         };
+
+        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(load.last_changed_for_sync, load.last_synced);
+        if (syncMarker) {
+            payload.last_synced = syncMarker;
+        }
 
         LOAD_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, load[field], {
