@@ -195,7 +195,9 @@ module.exports = {
         }
     },
     sync: {
-        intervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 2
+        intervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 2,
+        syncToleranceMs: parseInt(process.env.SYNC_TOLERANCE_MS, 10) || 60000,
+        airtableSyncToleranceMs: parseInt(process.env.AIRTABLE_SYNC_TOLERANCE_MS, 10) || 60000
     }
 };
 
