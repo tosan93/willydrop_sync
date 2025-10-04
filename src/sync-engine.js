@@ -97,6 +97,24 @@ const USER_NUMERIC_FIELDS = new Set();
 const USER_REQUIRED_FIELDS = new Set(['email']);
 const USER_COMPANY_LINK_FIELDS = ['company_id'];
 
+const BOOKING_FIELDS = [
+    'load_id',
+    'carrier_id',
+    'quoted_price',
+    'final_price',
+    'margin_percentage',
+    'status',
+    'quoted_at',
+    'confirmed_at',
+    'truck_trailer_info',
+    'driver_info'
+];
+
+const BOOKING_NUMERIC_FIELDS = new Set(['quoted_price', 'final_price', 'margin_percentage']);
+const BOOKING_REQUIRED_FIELDS = new Set([]);
+const BOOKING_LOAD_LINK_FIELDS = ['load_id'];
+const BOOKING_COMPANY_LINK_FIELDS = ['carrier_id'];
+
 const SUPABASE_UPDATE_METHOD_BY_ENTITY = {
     car: 'updateCar',
     location: 'updateLocation',
@@ -121,6 +139,7 @@ class SyncEngine {
         this.airtableCompanies = this.createAirtableClient(config.airtable.companies);
         this.airtableLoads = this.createAirtableClient(config.airtable.loads);
         this.airtableUsers = this.createAirtableClient(config.airtable.users);
+        this.airtableBookings = this.createAirtableClient(config.airtable.bookings);
     }
 
     createAirtableClient(sectionConfig) {
@@ -149,7 +168,7 @@ class SyncEngine {
         return new AirtableClient(options);
     }
 
-    async runFullSync(type = 'manual', tables = ['locations', 'companies', 'users', 'cars', 'loads']) {
+    async runFullSync(type = 'manual', tables = ['locations', 'companies', 'users', 'cars', 'loads', 'bookings']) {
         console.log('[sync] Starting full bidirectional sync...');
 
         if (tables.includes('locations')) {
@@ -167,6 +186,9 @@ class SyncEngine {
         if (tables.includes('loads')) {
             await this.runSyncWithTracking('loads', 'airtable_to_supabase', type, () => this.syncLoadsAirtableToSupabase());
         }
+        if (tables.includes('bookings')) {
+            await this.runSyncWithTracking('bookings', 'airtable_to_supabase', type, () => this.syncBookingsAirtableToSupabase());
+        }
 
         if (tables.includes('locations')) {
             await this.runSyncWithTracking('locations', 'supabase_to_airtable', type, () => this.syncLocationsSupabaseToAirtable());
@@ -182,6 +204,9 @@ class SyncEngine {
         }
         if (tables.includes('loads')) {
             await this.runSyncWithTracking('loads', 'supabase_to_airtable', type, () => this.syncLoadsSupabaseToAirtable());
+        }
+        if (tables.includes('bookings')) {
+            await this.runSyncWithTracking('bookings', 'supabase_to_airtable', type, () => this.syncBookingsSupabaseToAirtable());
         }
 
         console.log('[sync] Full sync complete.');
@@ -1003,6 +1028,180 @@ class SyncEngine {
         return stats;
     }
 
+    async syncBookingsAirtableToSupabase() {
+        if (!this.airtableBookings) {
+            console.log('[sync] Skipping Airtable -> Supabase bookings (no table configured).');
+            return this.initializeStats();
+        }
+
+        console.log('[sync] Processing Airtable -> Supabase booking changes...');
+
+        const [airtableRecords, supabaseLoads, supabaseCompanies] = await Promise.all([
+            this.airtableBookings.getAllRecords(),
+            this.supabase.getAllLoads(),
+            this.supabase.getAllCompanies()
+        ]);
+
+        const loadSupabaseIdByAirtableId = new Map();
+        supabaseLoads.forEach(load => {
+            if (load.airtable_id) {
+                loadSupabaseIdByAirtableId.set(load.airtable_id, load.id);
+            }
+        });
+
+        const companySupabaseIdByAirtableId = new Map();
+        supabaseCompanies.forEach(company => {
+            if (company.airtable_id) {
+                companySupabaseIdByAirtableId.set(company.airtable_id, company.id);
+            }
+        });
+
+        const stats = this.initializeStats();
+
+        for (const record of airtableRecords) {
+            try {
+                const result = await this.upsertBookingFromAirtable(record, {
+                    loadSupabaseIdByAirtableId,
+                    companySupabaseIdByAirtableId
+                });
+                this.applySyncResult(stats, result);
+            } catch (error) {
+                stats.errors += 1;
+                console.error(`[sync] Failed to sync Airtable booking ${record.airtable_id}:`, error.message);
+            }
+        }
+
+        this.logSyncSummary('Airtable -> Supabase', 'bookings', stats);
+        return stats;
+    }
+
+    async syncBookingsSupabaseToAirtable() {
+        if (!this.airtableBookings) {
+            console.log('[sync] Skipping Supabase -> Airtable bookings (no table configured).');
+            return this.initializeStats();
+        }
+
+        console.log('[sync] Processing Supabase -> Airtable booking changes...');
+
+        const loadRecordsPromise = this.airtableLoads
+            ? this.airtableLoads.getAllRecords()
+            : Promise.resolve([]);
+
+        const companyRecordsPromise = this.airtableCompanies
+            ? this.airtableCompanies.getAllRecords()
+            : Promise.resolve([]);
+
+        const [supabaseBookings, airtableRecords, airtableLoadRecords, airtableCompanyRecords] = await Promise.all([
+            this.supabase.getAllBookings(),
+            this.airtableBookings.getAllRecords(),
+            loadRecordsPromise,
+            companyRecordsPromise
+        ]);
+
+        const airtableBySupabaseId = new Map();
+        const airtableByAirtableId = new Map();
+
+        airtableRecords.forEach(record => {
+            if (record.supabase_id) {
+                airtableBySupabaseId.set(record.supabase_id, record);
+            }
+            if (record.airtable_id) {
+                airtableByAirtableId.set(record.airtable_id, record);
+            }
+        });
+
+        const loadAirtableIdBySupabaseId = new Map();
+        airtableLoadRecords.forEach(loadRecord => {
+            const airtableId = this.normalizeId(loadRecord.airtable_id);
+            const supabaseId = this.normalizeId(loadRecord.supabase_id);
+            if (airtableId && supabaseId) {
+                loadAirtableIdBySupabaseId.set(supabaseId, airtableId);
+            }
+        });
+
+        const companyAirtableIdBySupabaseId = new Map();
+        airtableCompanyRecords.forEach(companyRecord => {
+            const airtableId = this.normalizeId(companyRecord.airtable_id);
+            const supabaseId = this.normalizeId(companyRecord.supabase_id);
+            if (airtableId && supabaseId) {
+                companyAirtableIdBySupabaseId.set(supabaseId, airtableId);
+            }
+        });
+
+        const stats = this.initializeStats();
+
+        for (const booking of supabaseBookings) {
+            const syncMarker = this.resolveSyncMarker(booking.last_changed_for_sync, booking.last_synced);
+
+            try {
+                const airtablePayload = this.mapBookingSupabaseToAirtable(booking, {
+                    loadAirtableIdBySupabaseId,
+                    companyAirtableIdBySupabaseId,
+                    syncMarker
+                });
+                let existingRecord = airtableBySupabaseId.get(booking.id);
+
+                if (!existingRecord && booking.airtable_id) {
+                    existingRecord = airtableByAirtableId.get(booking.airtable_id);
+                }
+
+                const supabaseHasChanged = !this.shouldSkipSync(booking.last_changed_for_sync, booking.last_synced);
+                const airtableHasChanged = existingRecord && !this.shouldSkipSync(existingRecord.last_changed_for_sync, existingRecord.last_synced, this.airtableSyncToleranceMs);
+
+                if (!supabaseHasChanged && !airtableHasChanged) {
+                    stats.skipped += 1;
+                    continue;
+                }
+
+                if (existingRecord && supabaseHasChanged && airtableHasChanged) {
+                    const comparison = this.compareTimestamps(booking.last_changed_for_sync, existingRecord.last_changed_for_sync);
+                    if (comparison === 'dest_newer') {
+                        console.log(`[sync] Skipping Supabase booking ${booking.id} -> Airtable: destination is newer (SB: ${booking.last_changed_for_sync}, AT: ${existingRecord.last_changed_for_sync})`);
+                        this.applySyncResult(stats, { action: 'unchanged' });
+                        continue;
+                    }
+                }
+
+                if (existingRecord) {
+                    const updatePayload = this.preparePayloadForUpdate(airtablePayload, existingRecord, 'supabaseToAirtable', 'bookings');
+                    let updatedRecord = existingRecord;
+                    let action = 'unchanged';
+
+                    if (Object.keys(updatePayload).length > 0) {
+                        updatedRecord = await this.airtableBookings.updateRecord(existingRecord.airtable_id, updatePayload);
+                        action = 'updated';
+                    }
+
+                    airtableBySupabaseId.set(booking.id, updatedRecord);
+                    airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
+
+                    const linkChanged = this.normalizeId(booking.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
+                    await this.ensureSupabaseAirtableId(booking, updatedRecord.airtable_id, 'booking');
+                    if (linkChanged && action === 'unchanged') {
+                        action = 'updated';
+                    }
+
+                    this.applySyncResult(stats, { action });
+                } else {
+                    const createPayload = this.preparePayloadForUpdate(airtablePayload, null, 'supabaseToAirtable', 'bookings');
+                    const createdRecord = await this.airtableBookings.createRecord(createPayload);
+                    airtableBySupabaseId.set(booking.id, createdRecord);
+                    airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
+                    await this.ensureSupabaseAirtableId(booking, createdRecord.airtable_id, 'booking');
+                    this.applySyncResult(stats, { action: 'created' });
+                }
+
+                await this.supabase.updateBooking(booking.id, { last_synced: syncMarker });
+            } catch (error) {
+                stats.errors += 1;
+                console.error(`[sync] Failed to sync Supabase booking ${booking.id}:`, error.message);
+            }
+        }
+
+        this.logSyncSummary('Supabase -> Airtable', 'bookings', stats);
+        return stats;
+    }
+
     async upsertCarFromAirtable(record, context = {}) {
         const rawSupabasePayload = this.mapCarAirtableToSupabase(record, context);
         const referencedSupabaseId = record.supabase_id;
@@ -1449,6 +1648,85 @@ class SyncEngine {
         return { action: 'created', supabaseId: createdLoad.id };
     }
 
+    async upsertBookingFromAirtable(record, context = {}) {
+        if (!this.airtableBookings) {
+            return { action: 'skipped' };
+        }
+
+        const rawSupabasePayload = this.mapBookingAirtableToSupabase(record, context);
+        const referencedSupabaseId = this.normalizeId(record.supabase_id);
+
+        let targetBooking = null;
+
+        if (referencedSupabaseId) {
+            targetBooking = await this.supabase.getBookingById(referencedSupabaseId);
+            if (!targetBooking) {
+                console.warn(`[sync] Airtable booking ${record.airtable_id} references missing Supabase booking ${referencedSupabaseId}.`);
+            }
+        }
+
+        if (!targetBooking && record.airtable_id) {
+            targetBooking = await this.supabase.findBookingByAirtableId(record.airtable_id);
+        }
+
+        const airtableHasChanged = !this.shouldSkipSync(record.last_changed_for_sync, record.last_synced, this.airtableSyncToleranceMs);
+        const supabaseHasChanged = targetBooking && !this.shouldSkipSync(targetBooking.last_changed_for_sync, targetBooking.last_synced);
+
+        if (!airtableHasChanged && !supabaseHasChanged) {
+            return { action: 'unchanged', supabaseId: targetBooking?.id };
+        }
+
+        if (targetBooking && !airtableHasChanged && supabaseHasChanged) {
+            console.log(`[sync] Skipping Airtable booking ${record.airtable_id} -> Supabase: Supabase has changed (AT: ${record.last_changed_for_sync}, SB: ${targetBooking.last_changed_for_sync})`);
+            return { action: 'unchanged', supabaseId: targetBooking.id };
+        }
+
+        if (targetBooking && airtableHasChanged && supabaseHasChanged) {
+            const comparison = this.compareTimestamps(record.last_changed_for_sync, targetBooking.last_changed_for_sync, this.airtableSyncToleranceMs);
+            if (comparison === 'dest_newer') {
+                console.log(`[sync] Skipping Airtable booking ${record.airtable_id} -> Supabase: both changed, Supabase is newer (AT: ${record.last_changed_for_sync}, SB: ${targetBooking.last_changed_for_sync})`);
+                return { action: 'unchanged', supabaseId: targetBooking.id };
+            }
+        }
+
+        const cleanedPayload = { ...rawSupabasePayload };
+
+        if (targetBooking) {
+            const updatePayload = this.preparePayloadForUpdate(cleanedPayload, targetBooking, 'airtableToSupabase', 'bookings');
+            let updatedBooking = targetBooking;
+            let action = 'unchanged';
+
+            if (Object.keys(updatePayload).length > 0) {
+                updatedBooking = await this.supabase.updateBooking(targetBooking.id, updatePayload);
+                action = 'updated';
+            }
+
+            const needsLinkUpdate = !record.supabase_id || record.supabase_id !== updatedBooking.id;
+            if (needsLinkUpdate) {
+                await this.airtableBookings.updateRecord(record.airtable_id, { supabase_id: updatedBooking.id });
+                if (action === 'unchanged') {
+                    action = 'updated';
+                }
+            }
+
+            return { action, supabaseId: updatedBooking.id };
+        }
+
+        const createPayload = this.preparePayloadForUpdate(cleanedPayload, null, 'airtableToSupabase', 'bookings');
+        if (referencedSupabaseId) {
+            createPayload.id = referencedSupabaseId;
+        }
+
+        const createdBooking = await this.supabase.createBooking(createPayload);
+
+        const needsLinkUpdate = !record.supabase_id || record.supabase_id !== createdBooking.id;
+        if (needsLinkUpdate) {
+            await this.airtableBookings.updateRecord(record.airtable_id, { supabase_id: createdBooking.id });
+        }
+
+        return { action: 'created', supabaseId: createdBooking.id };
+    }
+
     mapCarAirtableToSupabase(record, options = {}) {
         const payload = {
             airtable_id: record.airtable_id
@@ -1793,6 +2071,132 @@ class SyncEngine {
                 console.warn(`[sync] Supabase load ${load.id} references ${field} ${supabaseCompanyId}, which is missing an Airtable record.`);
             }
         });
+        return payload;
+    }
+
+    mapBookingAirtableToSupabase(record, options = {}) {
+        const payload = {
+            airtable_id: record.airtable_id
+        };
+
+        BOOKING_FIELDS.forEach(field => {
+            const value = this.normalizeValue(field, record[field], {
+                numericFields: BOOKING_NUMERIC_FIELDS,
+                requiredFields: BOOKING_REQUIRED_FIELDS
+            });
+            if (value !== undefined) {
+                payload[field] = value;
+            }
+        });
+
+        const loadSupabaseIdByAirtableId = options.loadSupabaseIdByAirtableId instanceof Map
+            ? options.loadSupabaseIdByAirtableId
+            : new Map(Object.entries(options.loadSupabaseIdByAirtableId || {}));
+
+        const companySupabaseIdByAirtableId = options.companySupabaseIdByAirtableId instanceof Map
+            ? options.companySupabaseIdByAirtableId
+            : new Map(Object.entries(options.companySupabaseIdByAirtableId || {}));
+
+        BOOKING_LOAD_LINK_FIELDS.forEach(field => {
+            const airtableLinkedId = this.extractLinkedRecordId(record[field]);
+
+            if (!airtableLinkedId) {
+                payload[field] = null;
+                return;
+            }
+
+            const supabaseLoadId = loadSupabaseIdByAirtableId.get(airtableLinkedId);
+            if (supabaseLoadId) {
+                payload[field] = supabaseLoadId;
+            } else {
+                console.warn(`[sync] Airtable booking ${record.airtable_id} references ${field} ${airtableLinkedId}, which is missing in Supabase loads.`);
+            }
+        });
+
+        BOOKING_COMPANY_LINK_FIELDS.forEach(field => {
+            const airtableLinkedId = this.extractLinkedRecordId(record[field]);
+
+            if (!airtableLinkedId) {
+                payload[field] = null;
+                return;
+            }
+
+            const supabaseCompanyId = companySupabaseIdByAirtableId.get(airtableLinkedId);
+            if (supabaseCompanyId) {
+                payload[field] = supabaseCompanyId;
+            } else {
+                console.warn(`[sync] Airtable booking ${record.airtable_id} references ${field} ${airtableLinkedId}, which is missing in Supabase companies.`);
+            }
+        });
+
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id));
+        if (airtableNameLabel !== undefined) {
+            payload.airtable_id_name_label = airtableNameLabel;
+        }
+
+        return payload;
+    }
+
+    mapBookingSupabaseToAirtable(booking, options = {}) {
+        const payload = {
+            supabase_id: booking.id
+        };
+
+        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(booking.last_changed_for_sync, booking.last_synced);
+        if (syncMarker) {
+            payload.last_synced = syncMarker;
+        }
+
+        BOOKING_FIELDS.forEach(field => {
+            const value = this.normalizeValue(field, booking[field], {
+                numericFields: BOOKING_NUMERIC_FIELDS,
+                requiredFields: BOOKING_REQUIRED_FIELDS
+            });
+            if (value !== undefined) {
+                payload[field] = value;
+            }
+        });
+
+        const loadAirtableIdBySupabaseId = options.loadAirtableIdBySupabaseId instanceof Map
+            ? options.loadAirtableIdBySupabaseId
+            : new Map(Object.entries(options.loadAirtableIdBySupabaseId || {}));
+
+        const companyAirtableIdBySupabaseId = options.companyAirtableIdBySupabaseId instanceof Map
+            ? options.companyAirtableIdBySupabaseId
+            : new Map(Object.entries(options.companyAirtableIdBySupabaseId || {}));
+
+        BOOKING_LOAD_LINK_FIELDS.forEach(field => {
+            const supabaseLoadId = this.normalizeId(booking[field]);
+
+            if (!supabaseLoadId) {
+                payload[field] = [];
+                return;
+            }
+
+            const airtableLoadId = loadAirtableIdBySupabaseId.get(supabaseLoadId);
+            if (airtableLoadId) {
+                payload[field] = [airtableLoadId];
+            } else {
+                console.warn(`[sync] Supabase booking ${booking.id} references ${field} ${supabaseLoadId}, which is missing an Airtable record.`);
+            }
+        });
+
+        BOOKING_COMPANY_LINK_FIELDS.forEach(field => {
+            const supabaseCompanyId = this.normalizeId(booking[field]);
+
+            if (!supabaseCompanyId) {
+                payload[field] = [];
+                return;
+            }
+
+            const airtableCompanyId = companyAirtableIdBySupabaseId.get(supabaseCompanyId);
+            if (airtableCompanyId) {
+                payload[field] = [airtableCompanyId];
+            } else {
+                console.warn(`[sync] Supabase booking ${booking.id} references ${field} ${supabaseCompanyId}, which is missing an Airtable record.`);
+            }
+        });
+
         return payload;
     }
 

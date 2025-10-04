@@ -151,7 +151,8 @@ function loadAirtableFieldMappings() {
         locations: fileMappings.locations || {},
         companies: fileMappings.companies || {},
         loads: fileMappings.loads || {},
-        users: fileMappings.users || {}
+        users: fileMappings.users || {},
+        bookings: fileMappings.bookings || {}
     };
 }
 
@@ -165,7 +166,8 @@ module.exports = {
         locationsTableName: process.env.SUPABASE_LOCATIONS_TABLE || 'locations',
         companiesTableName: process.env.SUPABASE_COMPANIES_TABLE || 'companies',
         loadsTableName: process.env.SUPABASE_LOADS_TABLE || 'loads',
-        usersTableName: process.env.SUPABASE_USERS_TABLE || 'users'
+        usersTableName: process.env.SUPABASE_USERS_TABLE || 'users',
+        bookingsTableName: process.env.SUPABASE_BOOKINGS_TABLE || 'bookings'
     },
     airtable: {
         token: process.env.AIRTABLE_TOKEN,
@@ -192,6 +194,11 @@ module.exports = {
             tableId: process.env.AIRTABLE_USERS_TABLE_ID,
             tableName: process.env.AIRTABLE_USERS_TABLE_NAME || 'Users',
             fieldMapping: airtableMappings.users
+        },
+        bookings: {
+            tableId: process.env.AIRTABLE_BOOKINGS_TABLE_ID,
+            tableName: process.env.AIRTABLE_BOOKINGS_TABLE_NAME || 'Bookings',
+            fieldMapping: airtableMappings.bookings || {}
         }
     },
     sync: {

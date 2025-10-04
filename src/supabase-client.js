@@ -13,6 +13,7 @@ class SupabaseClient {
         this.companiesTableName = config.supabase.companiesTableName || 'companies';
         this.loadsTableName = config.supabase.loadsTableName || 'loads';
         this.usersTableName = config.supabase.usersTableName || 'users';
+        this.bookingsTableName = config.supabase.bookingsTableName || 'bookings';
         this.client = createClient(config.supabase.url, config.supabase.serviceKey, {
             auth: {
                 persistSession: false
@@ -399,8 +400,69 @@ class SupabaseClient {
             return this.getUserById(id);
         }
 
-        const { data, error } = await this.client
+        const { data, error} = await this.client
             .from(this.usersTableName)
+            .update(payload)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async getAllBookings() {
+        const { data, error } = await this.client
+            .from(this.bookingsTableName)
+            .select('*');
+
+        if (error) throw error;
+        return data || [];
+    }
+
+    async getBookingById(id) {
+        const { data, error } = await this.client
+            .from(this.bookingsTableName)
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async findBookingByAirtableId(airtableId) {
+        const { data, error } = await this.client
+            .from(this.bookingsTableName)
+            .select('*')
+            .eq('airtable_id', airtableId)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async createBooking(bookingData) {
+        const payload = this.cleanPayload({ ...bookingData });
+        const { data, error } = await this.client
+            .from(this.bookingsTableName)
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async updateBooking(id, updates) {
+        const payload = this.cleanPayload({ ...updates });
+
+        if (Object.keys(payload).length === 0) {
+            return this.getBookingById(id);
+        }
+
+        const { data, error } = await this.client
+            .from(this.bookingsTableName)
             .update(payload)
             .eq('id', id)
             .select()
