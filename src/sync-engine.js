@@ -982,11 +982,14 @@ class SyncEngine {
             targetCar = await this.supabase.findCarByExternalId(rawSupabasePayload.external_id);
         }
 
-        if (targetCar && this.shouldSkipSync(targetCar.last_changed_for_sync, targetCar.last_synced)) {
-            return { action: 'unchanged', supabaseId: targetCar.id };
+        const airtableHasChanged = !this.shouldSkipSync(record.last_changed_for_sync, record.last_synced, this.airtableSyncToleranceMs);
+        const supabaseHasChanged = targetCar && !this.shouldSkipSync(targetCar.last_changed_for_sync, targetCar.last_synced);
+
+        if (!airtableHasChanged && !supabaseHasChanged) {
+            return { action: 'unchanged', supabaseId: targetCar?.id };
         }
 
-        if (targetCar) {
+        if (targetCar && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetCar.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
                 console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCar.last_changed_for_sync})`);
@@ -1055,11 +1058,14 @@ class SyncEngine {
             targetLocation = await this.supabase.findLocationByAirtableId(record.airtable_id);
         }
 
-        if (targetLocation && this.shouldSkipSync(targetLocation.last_changed_for_sync, targetLocation.last_synced)) {
-            return { action: 'unchanged', supabaseId: targetLocation.id };
+        const airtableHasChanged = !this.shouldSkipSync(record.last_changed_for_sync, record.last_synced, this.airtableSyncToleranceMs);
+        const supabaseHasChanged = targetLocation && !this.shouldSkipSync(targetLocation.last_changed_for_sync, targetLocation.last_synced);
+
+        if (!airtableHasChanged && !supabaseHasChanged) {
+            return { action: 'unchanged', supabaseId: targetLocation?.id };
         }
 
-        if (targetLocation) {
+        if (targetLocation && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetLocation.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
                 console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLocation.last_changed_for_sync})`);
@@ -1138,11 +1144,14 @@ class SyncEngine {
             }
         }
 
-        if (targetCompany && this.shouldSkipSync(targetCompany.last_changed_for_sync, targetCompany.last_synced)) {
-            return { action: 'unchanged', supabaseId: targetCompany.id };
+        const airtableHasChanged = !this.shouldSkipSync(record.last_changed_for_sync, record.last_synced, this.airtableSyncToleranceMs);
+        const supabaseHasChanged = targetCompany && !this.shouldSkipSync(targetCompany.last_changed_for_sync, targetCompany.last_synced);
+
+        if (!airtableHasChanged && !supabaseHasChanged) {
+            return { action: 'unchanged', supabaseId: targetCompany?.id };
         }
 
-        if (targetCompany) {
+        if (targetCompany && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetCompany.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
                 console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetCompany.last_changed_for_sync})`);
@@ -1224,11 +1233,14 @@ class SyncEngine {
             targetUser = await this.supabase.findUserByEmail(rawSupabasePayload.email);
         }
 
-        if (targetUser && this.shouldSkipSync(targetUser.last_changed_for_sync, targetUser.last_synced)) {
-            return { action: 'unchanged', supabaseId: targetUser.id };
+        const airtableHasChanged = !this.shouldSkipSync(record.last_changed_for_sync, record.last_synced, this.airtableSyncToleranceMs);
+        const supabaseHasChanged = targetUser && !this.shouldSkipSync(targetUser.last_changed_for_sync, targetUser.last_synced);
+
+        if (!airtableHasChanged && !supabaseHasChanged) {
+            return { action: 'unchanged', supabaseId: targetUser?.id };
         }
 
-        if (targetUser) {
+        if (targetUser && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetUser.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
                 console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetUser.last_changed_for_sync})`);
@@ -1303,11 +1315,14 @@ class SyncEngine {
             }
         }
 
-        if (targetLoad && this.shouldSkipSync(targetLoad.last_changed_for_sync, targetLoad.last_synced)) {
-            return { action: 'unchanged', supabaseId: targetLoad.id };
+        const airtableHasChanged = !this.shouldSkipSync(record.last_changed_for_sync, record.last_synced, this.airtableSyncToleranceMs);
+        const supabaseHasChanged = targetLoad && !this.shouldSkipSync(targetLoad.last_changed_for_sync, targetLoad.last_synced);
+
+        if (!airtableHasChanged && !supabaseHasChanged) {
+            return { action: 'unchanged', supabaseId: targetLoad?.id };
         }
 
-        if (targetLoad) {
+        if (targetLoad && airtableHasChanged && supabaseHasChanged) {
             const comparison = this.compareTimestamps(record.last_changed_for_sync, targetLoad.last_changed_for_sync, this.airtableSyncToleranceMs);
             if (comparison === 'dest_newer') {
                 console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: destination is newer (AT: ${record.last_changed_for_sync}, SB: ${targetLoad.last_changed_for_sync})`);
