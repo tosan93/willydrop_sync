@@ -149,28 +149,71 @@ class SyncEngine {
         return new AirtableClient(options);
     }
 
-    async runFullSync() {
+    async runFullSync(type = 'manual') {
         console.log('[sync] Starting full bidirectional sync...');
 
-        await this.syncLocationsAirtableToSupabase();
-        await this.syncCompaniesAirtableToSupabase();
-        await this.syncUsersAirtableToSupabase();
-        await this.syncCarsAirtableToSupabase();
-        await this.syncLoadsAirtableToSupabase();
+        await this.runSyncWithTracking('locations', 'airtable_to_supabase', type, () => this.syncLocationsAirtableToSupabase());
+        await this.runSyncWithTracking('companies', 'airtable_to_supabase', type, () => this.syncCompaniesAirtableToSupabase());
+        await this.runSyncWithTracking('users', 'airtable_to_supabase', type, () => this.syncUsersAirtableToSupabase());
+        await this.runSyncWithTracking('cars', 'airtable_to_supabase', type, () => this.syncCarsAirtableToSupabase());
+        await this.runSyncWithTracking('loads', 'airtable_to_supabase', type, () => this.syncLoadsAirtableToSupabase());
 
-        await this.syncLocationsSupabaseToAirtable();
-        await this.syncCompaniesSupabaseToAirtable();
-        await this.syncUsersSupabaseToAirtable();
-        await this.syncCarsSupabaseToAirtable();
-        await this.syncLoadsSupabaseToAirtable();
+        await this.runSyncWithTracking('locations', 'supabase_to_airtable', type, () => this.syncLocationsSupabaseToAirtable());
+        await this.runSyncWithTracking('companies', 'supabase_to_airtable', type, () => this.syncCompaniesSupabaseToAirtable());
+        await this.runSyncWithTracking('users', 'supabase_to_airtable', type, () => this.syncUsersSupabaseToAirtable());
+        await this.runSyncWithTracking('cars', 'supabase_to_airtable', type, () => this.syncCarsSupabaseToAirtable());
+        await this.runSyncWithTracking('loads', 'supabase_to_airtable', type, () => this.syncLoadsSupabaseToAirtable());
 
         console.log('[sync] Full sync complete.');
+    }
+
+    async runSyncWithTracking(tableName, direction, type, syncFunction) {
+        let syncRunId = null;
+
+        try {
+            const syncRun = await this.supabase.createSyncRun(tableName, direction, type);
+            syncRunId = syncRun.id;
+        } catch (error) {
+            console.error(`[sync] Failed to create sync run record for ${tableName} ${direction}:`, error.message);
+        }
+
+        let stats = this.initializeStats();
+        let functionError = null;
+
+        try {
+            const result = await syncFunction();
+            if (result && typeof result === 'object' && result.processed !== undefined) {
+                stats = result;
+            }
+        } catch (error) {
+            functionError = error;
+            console.error(`[sync] Error during ${tableName} ${direction}:`, error.message);
+        }
+
+        if (syncRunId) {
+            try {
+                await this.supabase.updateSyncRun(syncRunId, {
+                    processed: stats.processed || 0,
+                    updated: stats.updated || 0,
+                    errors: stats.errors || 0,
+                    finished_at: new Date().toISOString()
+                });
+            } catch (error) {
+                console.error(`[sync] Failed to update sync run record ${syncRunId}:`, error.message);
+            }
+        }
+
+        if (functionError) {
+            throw functionError;
+        }
+
+        return stats;
     }
 
     async syncCompaniesAirtableToSupabase() {
         if (!this.airtableCompanies) {
             console.log('[sync] Skipping Airtable -> Supabase companies (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Airtable -> Supabase company changes...');
@@ -203,12 +246,13 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Airtable -> Supabase', 'companies', stats);
+        return stats;
     }
 
     async syncUsersAirtableToSupabase() {
         if (!this.airtableUsers) {
             console.log('[sync] Skipping Airtable -> Supabase users (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Airtable -> Supabase user changes...');
@@ -254,12 +298,13 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Airtable -> Supabase', 'users', stats);
+        return stats;
     }
 
     async syncLoadsAirtableToSupabase() {
         if (!this.airtableLoads) {
             console.log('[sync] Skipping Airtable -> Supabase loads (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Airtable -> Supabase load changes...');
@@ -316,6 +361,7 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Airtable -> Supabase', 'loads', stats);
+        return stats;
     }
 
     async syncCarsAirtableToSupabase() {
@@ -362,12 +408,13 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Airtable -> Supabase', 'cars', stats);
+        return stats;
     }
 
     async syncLocationsAirtableToSupabase() {
         if (!this.airtableLocations) {
             console.log('[sync] Skipping Airtable -> Supabase locations (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Airtable -> Supabase location changes...');
@@ -386,12 +433,13 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Airtable -> Supabase', 'locations', stats);
+        return stats;
     }
 
     async syncCompaniesSupabaseToAirtable() {
         if (!this.airtableCompanies) {
             console.log('[sync] Skipping Supabase -> Airtable companies (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Supabase -> Airtable company changes...');
@@ -416,12 +464,26 @@ class SyncEngine {
         const stats = this.initializeStats();
 
         for (const company of supabaseCompanies) {
+            if (this.shouldSkipSync(company.last_changed_for_sync, company.last_synced)) {
+                stats.skipped += 1;
+                continue;
+            }
+
             try {
                 const airtablePayload = this.mapCompanySupabaseToAirtable(company);
                 let existingRecord = airtableBySupabaseId.get(company.id);
 
                 if (!existingRecord && company.airtable_id) {
                     existingRecord = airtableByAirtableId.get(company.airtable_id);
+                }
+
+                if (existingRecord) {
+                    const comparison = this.compareTimestamps(company.last_changed_for_sync, existingRecord.last_synced);
+                    if (comparison === 'dest_newer') {
+                        console.log(`[sync] Skipping Supabase company ${company.id} -> Airtable: destination is newer`);
+                        this.applySyncResult(stats, { action: 'unchanged' });
+                        continue;
+                    }
                 }
 
                 if (existingRecord) {
@@ -459,12 +521,13 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Supabase -> Airtable', 'companies', stats);
+        return stats;
     }
 
     async syncUsersSupabaseToAirtable() {
         if (!this.airtableUsers) {
             console.log('[sync] Skipping Supabase -> Airtable users (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Supabase -> Airtable user changes...');
@@ -503,8 +566,14 @@ class SyncEngine {
         const stats = this.initializeStats();
 
         for (const user of supabaseUsers) {
+            const syncMarker = this.resolveSyncMarker(user.last_changed_for_sync, user.last_synced);
+            if (this.shouldSkipSync(user.last_changed_for_sync, user.last_synced)) {
+                stats.skipped += 1;
+                continue;
+            }
+
             try {
-                const airtablePayload = this.mapUserSupabaseToAirtable(user, { companyAirtableIdBySupabaseId });
+                const airtablePayload = this.mapUserSupabaseToAirtable(user, { companyAirtableIdBySupabaseId, syncMarker });
                 let existingRecord = airtableBySupabaseId.get(user.id);
 
                 if (!existingRecord && user.airtable_id) {
@@ -539,19 +608,22 @@ class SyncEngine {
                     await this.ensureSupabaseAirtableId(user, createdRecord.airtable_id, 'user');
                     this.applySyncResult(stats, { action: 'created' });
                 }
+
+                await this.supabase.updateUser(user.id, { last_synced: syncMarker });
             } catch (error) {
                 stats.errors += 1;
-                console.error(`[sync] Failed to sync Supabase user ${user.id}:`, error.message);
+                console.error([sync] Failed to sync Supabase user :, error.message);
             }
         }
 
         this.logSyncSummary('Supabase -> Airtable', 'users', stats);
+        return stats;
     }
 
     async syncLoadsSupabaseToAirtable() {
         if (!this.airtableLoads) {
             console.log('[sync] Skipping Supabase -> Airtable loads (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Supabase -> Airtable load changes...');
@@ -597,6 +669,11 @@ class SyncEngine {
         const stats = this.initializeStats();
 
         for (const load of supabaseLoads) {
+            if (this.shouldSkipSync(load.last_changed_for_sync, load.last_synced)) {
+                stats.skipped += 1;
+                continue;
+            }
+
             try {
                 const airtablePayload = this.mapLoadSupabaseToAirtable(load, { companyAirtableIdBySupabaseId });
                 let existingRecord = airtableBySupabaseId.get(load.id);
@@ -609,6 +686,15 @@ class SyncEngine {
                     const normalizedLoadNumber = typeof load.load_number === 'string' ? load.load_number.trim() : null;
                     if (normalizedLoadNumber) {
                         existingRecord = airtableByLoadNumber.get(normalizedLoadNumber);
+                    }
+                }
+
+                if (existingRecord) {
+                    const comparison = this.compareTimestamps(load.last_changed_for_sync, existingRecord.last_synced);
+                    if (comparison === 'dest_newer') {
+                        console.log(`[sync] Skipping Supabase load ${load.id} -> Airtable: destination is newer`);
+                        this.applySyncResult(stats, { action: 'unchanged' });
+                        continue;
                     }
                 }
 
@@ -659,6 +745,7 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Supabase -> Airtable', 'loads', stats);
+        return stats;
     }
 
     async syncCarsSupabaseToAirtable() {
@@ -698,12 +785,26 @@ class SyncEngine {
         const stats = this.initializeStats();
 
         for (const car of supabaseCars) {
+            if (this.shouldSkipSync(car.last_changed_for_sync, car.last_synced)) {
+                stats.skipped += 1;
+                continue;
+            }
+
             try {
                 const airtablePayload = this.mapCarSupabaseToAirtable(car, { locationAirtableIdBySupabaseId });
                 let existingRecord = airtableBySupabaseId.get(car.id);
 
                 if (!existingRecord && car.airtable_id) {
                     existingRecord = airtableByAirtableId.get(car.airtable_id);
+                }
+
+                if (existingRecord) {
+                    const comparison = this.compareTimestamps(car.last_changed_for_sync, existingRecord.last_synced);
+                    if (comparison === 'dest_newer') {
+                        console.log(`[sync] Skipping Supabase car ${car.id} -> Airtable: destination is newer`);
+                        this.applySyncResult(stats, { action: 'unchanged' });
+                        continue;
+                    }
                 }
 
                 if (existingRecord) {
@@ -741,12 +842,13 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Supabase -> Airtable', 'cars', stats);
+        return stats;
     }
 
     async syncLocationsSupabaseToAirtable() {
         if (!this.airtableLocations) {
             console.log('[sync] Skipping Supabase -> Airtable locations (no table configured).');
-            return;
+            return this.initializeStats();
         }
 
         console.log('[sync] Processing Supabase -> Airtable location changes...');
@@ -771,12 +873,26 @@ class SyncEngine {
         const stats = this.initializeStats();
 
         for (const location of supabaseLocations) {
+            if (this.shouldSkipSync(location.last_changed_for_sync, location.last_synced)) {
+                stats.skipped += 1;
+                continue;
+            }
+
             try {
                 const airtablePayload = this.mapLocationSupabaseToAirtable(location);
                 let existingRecord = airtableBySupabaseId.get(location.id);
 
                 if (!existingRecord && location.airtable_id) {
                     existingRecord = airtableByAirtableId.get(location.airtable_id);
+                }
+
+                if (existingRecord) {
+                    const comparison = this.compareTimestamps(location.last_changed_for_sync, existingRecord.last_synced);
+                    if (comparison === 'dest_newer') {
+                        console.log(`[sync] Skipping Supabase location ${location.id} -> Airtable: destination is newer`);
+                        this.applySyncResult(stats, { action: 'unchanged' });
+                        continue;
+                    }
                 }
 
                 if (existingRecord) {
@@ -814,6 +930,7 @@ class SyncEngine {
         }
 
         this.logSyncSummary('Supabase -> Airtable', 'locations', stats);
+        return stats;
     }
 
     async upsertCarFromAirtable(record, context = {}) {
@@ -831,6 +948,18 @@ class SyncEngine {
 
         if (!targetCar && rawSupabasePayload.external_id) {
             targetCar = await this.supabase.findCarByExternalId(rawSupabasePayload.external_id);
+        }
+
+        if (targetCar && this.shouldSkipSync(targetCar.last_changed_for_sync, targetCar.last_synced)) {
+            return { action: 'unchanged', supabaseId: targetCar.id };
+        }
+
+        if (targetCar) {
+            const comparison = this.compareTimestamps(record.last_synced, targetCar.last_changed_for_sync);
+            if (comparison === 'dest_newer') {
+                console.log(`[sync] Skipping Airtable car ${record.airtable_id} -> Supabase: destination is newer`);
+                return { action: 'unchanged', supabaseId: targetCar.id };
+            }
         }
 
         const cleanedPayload = { ...rawSupabasePayload };
@@ -892,6 +1021,18 @@ class SyncEngine {
 
         if (!targetLocation && record.airtable_id) {
             targetLocation = await this.supabase.findLocationByAirtableId(record.airtable_id);
+        }
+
+        if (targetLocation && this.shouldSkipSync(targetLocation.last_changed_for_sync, targetLocation.last_synced)) {
+            return { action: 'unchanged', supabaseId: targetLocation.id };
+        }
+
+        if (targetLocation) {
+            const comparison = this.compareTimestamps(record.last_synced, targetLocation.last_changed_for_sync);
+            if (comparison === 'dest_newer') {
+                console.log(`[sync] Skipping Airtable location ${record.airtable_id} -> Supabase: destination is newer`);
+                return { action: 'unchanged', supabaseId: targetLocation.id };
+            }
         }
 
         const cleanedPayload = { ...rawSupabasePayload };
@@ -962,6 +1103,18 @@ class SyncEngine {
             const lookupKey = rawSupabasePayload.name.trim().toLowerCase();
             if (lookupKey) {
                 targetCompany = nameLookup.get(lookupKey) || await this.supabase.findCompanyByName(rawSupabasePayload.name);
+            }
+        }
+
+        if (targetCompany && this.shouldSkipSync(targetCompany.last_changed_for_sync, targetCompany.last_synced)) {
+            return { action: 'unchanged', supabaseId: targetCompany.id };
+        }
+
+        if (targetCompany) {
+            const comparison = this.compareTimestamps(record.last_synced, targetCompany.last_changed_for_sync);
+            if (comparison === 'dest_newer') {
+                console.log(`[sync] Skipping Airtable company ${record.airtable_id} -> Supabase: destination is newer`);
+                return { action: 'unchanged', supabaseId: targetCompany.id };
             }
         }
 
@@ -1039,6 +1192,18 @@ class SyncEngine {
             targetUser = await this.supabase.findUserByEmail(rawSupabasePayload.email);
         }
 
+        if (targetUser && this.shouldSkipSync(targetUser.last_changed_for_sync, targetUser.last_synced)) {
+            return { action: 'unchanged', supabaseId: targetUser.id };
+        }
+
+        if (targetUser) {
+            const comparison = this.compareTimestamps(record.last_synced, targetUser.last_changed_for_sync);
+            if (comparison === 'dest_newer') {
+                console.log(`[sync] Skipping Airtable user ${record.airtable_id} -> Supabase: destination is newer`);
+                return { action: 'unchanged', supabaseId: targetUser.id };
+            }
+        }
+
         const cleanedPayload = { ...rawSupabasePayload };
 
         if (targetUser) {
@@ -1103,6 +1268,18 @@ class SyncEngine {
             const key = rawSupabasePayload.load_number.trim();
             if (key) {
                 targetLoad = loadNumberLookup.get(key) || await this.supabase.findLoadByLoadNumber(key);
+            }
+        }
+
+        if (targetLoad && this.shouldSkipSync(targetLoad.last_changed_for_sync, targetLoad.last_synced)) {
+            return { action: 'unchanged', supabaseId: targetLoad.id };
+        }
+
+        if (targetLoad) {
+            const comparison = this.compareTimestamps(record.last_synced, targetLoad.last_changed_for_sync);
+            if (comparison === 'dest_newer') {
+                console.log(`[sync] Skipping Airtable load ${record.airtable_id} -> Supabase: destination is newer`);
+                return { action: 'unchanged', supabaseId: targetLoad.id };
             }
         }
 
@@ -1203,10 +1380,7 @@ class SyncEngine {
         return payload;
     }
 
-    mapCarSupabaseToAirtable(car, options = {}) {
-        const payload = {
-            supabase_id: car.id
-        };
+    mapCarSupabaseToAirtable(car, options = {}) {\r\n        const payload = {\r\n            supabase_id: car.id\r\n        };\r\n\r\n        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(car.last_changed_for_sync, car.last_synced);\r\n        if (syncMarker) {\r\n            payload.last_synced = syncMarker;\r\n        }
 
         CAR_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, car[field], {
@@ -1304,10 +1478,7 @@ class SyncEngine {
         return payload;
     }
 
-    mapCompanySupabaseToAirtable(company) {
-        const payload = {
-            supabase_id: company.id
-        };
+    mapCompanySupabaseToAirtable(company, options = {}) {\r\n        const payload = {\r\n            supabase_id: company.id\r\n        };\r\n\r\n        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(company.last_changed_for_sync, company.last_synced);\r\n        if (syncMarker) {\r\n            payload.last_synced = syncMarker;\r\n        }
 
         COMPANY_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, company[field], {
@@ -1364,10 +1535,7 @@ class SyncEngine {
         return payload;
     }
 
-    mapUserSupabaseToAirtable(user, options = {}) {
-        const payload = {
-            supabase_id: user.id
-        };
+    mapUserSupabaseToAirtable(user, options = {}) {\r\n        const payload = {\r\n            supabase_id: user.id\r\n        };\r\n\r\n        const syncMarker = this.normalizeSyncValue(options.syncMarker) || this.resolveSyncMarker(user.last_changed_for_sync, user.last_synced);\r\n        if (syncMarker) {\r\n            payload.last_synced = syncMarker;\r\n        }
 
         USER_FIELDS.forEach(field => {
             const value = this.normalizeValue(field, user[field], {
@@ -1706,6 +1874,94 @@ class SyncEngine {
 
         return value;
     }
+
+    normalizeSyncValue(value) {
+        if (!value) {
+            return null;
+        }
+
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (trimmed.length === 0) {
+                return null;
+            }
+            try {
+                const date = new Date(trimmed);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString();
+                }
+            } catch (e) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    resolveSyncMarker(lastChanged, lastSynced) {
+        const lastChangedNorm = this.normalizeSyncValue(lastChanged);
+        const lastSyncedNorm = this.normalizeSyncValue(lastSynced);
+
+        if (!lastChangedNorm) {
+            return new Date().toISOString();
+        }
+
+        if (!lastSyncedNorm) {
+            return lastChangedNorm;
+        }
+
+        const changedDate = new Date(lastChangedNorm);
+        const syncedDate = new Date(lastSyncedNorm);
+
+        return changedDate > syncedDate ? lastChangedNorm : new Date().toISOString();
+    }
+
+    shouldSkipSync(lastChanged, lastSynced) {
+        const lastChangedNorm = this.normalizeSyncValue(lastChanged);
+        const lastSyncedNorm = this.normalizeSyncValue(lastSynced);
+
+        if (!lastChangedNorm || !lastSyncedNorm) {
+            return false;
+        }
+
+        const changedDate = new Date(lastChangedNorm);
+        const syncedDate = new Date(lastSyncedNorm);
+
+        const diffMs = changedDate.getTime() - syncedDate.getTime();
+        return diffMs <= 1000;
+    }
+
+    compareTimestamps(sourceLastChanged, destLastChanged) {
+        const sourceNorm = this.normalizeSyncValue(sourceLastChanged);
+        const destNorm = this.normalizeSyncValue(destLastChanged);
+
+        if (!sourceNorm && !destNorm) {
+            return 'equal';
+        }
+
+        if (!sourceNorm) {
+            return 'dest_newer';
+        }
+
+        if (!destNorm) {
+            return 'source_newer';
+        }
+
+        const sourceDate = new Date(sourceNorm);
+        const destDate = new Date(destNorm);
+
+        if (sourceDate > destDate) {
+            return 'source_newer';
+        } else if (sourceDate < destDate) {
+            return 'dest_newer';
+        } else {
+            return 'equal';
+        }
+    }
 }
 
 module.exports = SyncEngine;
@@ -1744,6 +2000,16 @@ function mergeSyncRules(defaultRules, overrides) {
 
     return result;
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

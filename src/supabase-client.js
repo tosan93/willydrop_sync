@@ -410,6 +410,46 @@ class SupabaseClient {
         return data;
     }
 
+    async createSyncRun(tableName, direction, type = 'manual') {
+        const payload = {
+            table_name: tableName,
+            direction: direction,
+            type: type,
+            started_at: new Date().toISOString(),
+            processed: 0,
+            updated: 0,
+            errors: 0
+        };
+
+        const { data, error } = await this.client
+            .from('system_sync_runs')
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async updateSyncRun(id, updates) {
+        const payload = this.cleanPayload({ ...updates });
+
+        if (Object.keys(payload).length === 0) {
+            return;
+        }
+
+        if (!payload.finished_at && (payload.processed !== undefined || payload.updated !== undefined || payload.errors !== undefined)) {
+            payload.finished_at = new Date().toISOString();
+        }
+
+        const { error } = await this.client
+            .from('system_sync_runs')
+            .update(payload)
+            .eq('id', id);
+
+        if (error) throw error;
+    }
+
     cleanPayload(payload) {
         return Object.entries(payload).reduce((acc, [key, value]) => {
             if (value !== undefined) {
