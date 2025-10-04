@@ -21,6 +21,6 @@
     "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "sync": "node -e \"require('./src/sync-engine'); new (require('./src/sync-engine'))().runFullSync()\""
+    "sync": "node src/sync-cli.js"
   }
 }

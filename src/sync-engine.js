@@ -149,20 +149,40 @@ class SyncEngine {
         return new AirtableClient(options);
     }
 
-    async runFullSync(type = 'manual') {
+    async runFullSync(type = 'manual', tables = ['locations', 'companies', 'users', 'cars', 'loads']) {
         console.log('[sync] Starting full bidirectional sync...');
 
-        await this.runSyncWithTracking('locations', 'airtable_to_supabase', type, () => this.syncLocationsAirtableToSupabase());
-        await this.runSyncWithTracking('companies', 'airtable_to_supabase', type, () => this.syncCompaniesAirtableToSupabase());
-        await this.runSyncWithTracking('users', 'airtable_to_supabase', type, () => this.syncUsersAirtableToSupabase());
-        await this.runSyncWithTracking('cars', 'airtable_to_supabase', type, () => this.syncCarsAirtableToSupabase());
-        await this.runSyncWithTracking('loads', 'airtable_to_supabase', type, () => this.syncLoadsAirtableToSupabase());
+        if (tables.includes('locations')) {
+            await this.runSyncWithTracking('locations', 'airtable_to_supabase', type, () => this.syncLocationsAirtableToSupabase());
+        }
+        if (tables.includes('companies')) {
+            await this.runSyncWithTracking('companies', 'airtable_to_supabase', type, () => this.syncCompaniesAirtableToSupabase());
+        }
+        if (tables.includes('users')) {
+            await this.runSyncWithTracking('users', 'airtable_to_supabase', type, () => this.syncUsersAirtableToSupabase());
+        }
+        if (tables.includes('cars')) {
+            await this.runSyncWithTracking('cars', 'airtable_to_supabase', type, () => this.syncCarsAirtableToSupabase());
+        }
+        if (tables.includes('loads')) {
+            await this.runSyncWithTracking('loads', 'airtable_to_supabase', type, () => this.syncLoadsAirtableToSupabase());
+        }
 
-        await this.runSyncWithTracking('locations', 'supabase_to_airtable', type, () => this.syncLocationsSupabaseToAirtable());
-        await this.runSyncWithTracking('companies', 'supabase_to_airtable', type, () => this.syncCompaniesSupabaseToAirtable());
-        await this.runSyncWithTracking('users', 'supabase_to_airtable', type, () => this.syncUsersSupabaseToAirtable());
-        await this.runSyncWithTracking('cars', 'supabase_to_airtable', type, () => this.syncCarsSupabaseToAirtable());
-        await this.runSyncWithTracking('loads', 'supabase_to_airtable', type, () => this.syncLoadsSupabaseToAirtable());
+        if (tables.includes('locations')) {
+            await this.runSyncWithTracking('locations', 'supabase_to_airtable', type, () => this.syncLocationsSupabaseToAirtable());
+        }
+        if (tables.includes('companies')) {
+            await this.runSyncWithTracking('companies', 'supabase_to_airtable', type, () => this.syncCompaniesSupabaseToAirtable());
+        }
+        if (tables.includes('users')) {
+            await this.runSyncWithTracking('users', 'supabase_to_airtable', type, () => this.syncUsersSupabaseToAirtable());
+        }
+        if (tables.includes('cars')) {
+            await this.runSyncWithTracking('cars', 'supabase_to_airtable', type, () => this.syncCarsSupabaseToAirtable());
+        }
+        if (tables.includes('loads')) {
+            await this.runSyncWithTracking('loads', 'supabase_to_airtable', type, () => this.syncLoadsSupabaseToAirtable());
+        }
 
         console.log('[sync] Full sync complete.');
     }
