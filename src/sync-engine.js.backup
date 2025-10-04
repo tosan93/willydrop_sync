@@ -79,6 +79,8 @@ const LOAD_FIELDS = [
     'carrier_id',
     'total_distance_km',
     'estimated_duration_hours',
+    'driver_info',
+    'truck_trailer_info',
     'load_status',
     'transport_rate'
 ];
