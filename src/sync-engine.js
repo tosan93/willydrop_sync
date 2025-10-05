@@ -1808,6 +1808,7 @@ class SyncEngine {
                 payload[field] = [airtableLocationId];
             } else {
                 console.warn(`[sync] Supabase car ${car.id} references ${field} ${supabaseLocationId}, which is missing an Airtable record.`);
+                payload[field] = [];
             }
         });
         return payload;
@@ -2069,6 +2070,7 @@ class SyncEngine {
                 payload[field] = [airtableCompanyId];
             } else {
                 console.warn(`[sync] Supabase load ${load.id} references ${field} ${supabaseCompanyId}, which is missing an Airtable record.`);
+                payload[field] = [];
             }
         });
         return payload;
@@ -2178,6 +2180,7 @@ class SyncEngine {
                 payload[field] = [airtableLoadId];
             } else {
                 console.warn(`[sync] Supabase booking ${booking.id} references ${field} ${supabaseLoadId}, which is missing an Airtable record.`);
+                payload[field] = [];
             }
         });
 
@@ -2194,6 +2197,7 @@ class SyncEngine {
                 payload[field] = [airtableCompanyId];
             } else {
                 console.warn(`[sync] Supabase booking ${booking.id} references ${field} ${supabaseCompanyId}, which is missing an Airtable record.`);
+                payload[field] = [];
             }
         });
 
