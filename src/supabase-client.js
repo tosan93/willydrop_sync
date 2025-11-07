@@ -14,6 +14,7 @@ class SupabaseClient {
         this.loadsTableName = config.supabase.loadsTableName || 'loads';
         this.usersTableName = config.supabase.usersTableName || 'users';
         this.bookingsTableName = config.supabase.bookingsTableName || 'bookings';
+        this.requestsTableName = config.supabase.requestsTableName || 'requests';
         this.client = createClient(config.supabase.url, config.supabase.serviceKey, {
             auth: {
                 persistSession: false
@@ -463,6 +464,67 @@ class SupabaseClient {
 
         const { data, error } = await this.client
             .from(this.bookingsTableName)
+            .update(payload)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async getAllRequests() {
+        const { data, error } = await this.client
+            .from(this.requestsTableName)
+            .select('*');
+
+        if (error) throw error;
+        return data || [];
+    }
+
+    async getRequestById(id) {
+        const { data, error } = await this.client
+            .from(this.requestsTableName)
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async findRequestByAirtableId(airtableId) {
+        const { data, error } = await this.client
+            .from(this.requestsTableName)
+            .select('*')
+            .eq('airtable_id', airtableId)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async createRequest(requestData) {
+        const payload = this.cleanPayload({ ...requestData });
+        const { data, error } = await this.client
+            .from(this.requestsTableName)
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    async updateRequest(id, updates) {
+        const payload = this.cleanPayload({ ...updates });
+
+        if (Object.keys(payload).length === 0) {
+            return this.getRequestById(id);
+        }
+
+        const { data, error } = await this.client
+            .from(this.requestsTableName)
             .update(payload)
             .eq('id', id)
             .select()

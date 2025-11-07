@@ -59,7 +59,8 @@ const LOCATION_FIELDS = [
     'postal_code',
     'country_code',
     'latitude',
-    'longitude'
+    'longitude',
+    'created_at'
 ];
 
 const LOCATION_NUMERIC_FIELDS = new Set(['latitude', 'longitude']);
@@ -79,6 +80,8 @@ const LOAD_FIELDS = [
     'carrier_id',
     'total_distance_km',
     'estimated_duration_hours',
+    'created_at',
+    'updated_at',
     'load_status',
     'transport_rate'
 ];
@@ -90,7 +93,8 @@ const LOAD_COMPANY_LINK_FIELDS = ['carrier_id'];
 const USER_FIELDS = [
     'email',
     'company_id',
-    'is_active'
+    'is_active',
+    'created_at'
 ];
 
 const USER_NUMERIC_FIELDS = new Set();
@@ -98,8 +102,6 @@ const USER_REQUIRED_FIELDS = new Set(['email']);
 const USER_COMPANY_LINK_FIELDS = ['company_id'];
 
 const BOOKING_FIELDS = [
-    'load_id',
-    'carrier_id',
     'quoted_price',
     'final_price',
     'margin_percentage',
@@ -114,13 +116,27 @@ const BOOKING_NUMERIC_FIELDS = new Set(['quoted_price', 'final_price', 'margin_p
 const BOOKING_REQUIRED_FIELDS = new Set([]);
 const BOOKING_LOAD_LINK_FIELDS = ['load_id'];
 const BOOKING_COMPANY_LINK_FIELDS = ['carrier_id'];
+const CAR_DATE_ONLY_FIELDS = new Set([
+    'earliest_availability_date',
+    'pick_up_date',
+    'delivery_date_actual',
+    'delivery_date_customer_view',
+    'delivery_date_quoted'
+]);
+
+const BOOKING_DATE_ONLY_FIELDS = new Set(['quoted_at']);
+
+const LOCATION_DATE_ONLY_FIELDS = new Set(['created_at']);
+const USER_DATE_ONLY_FIELDS = new Set(['created_at']);
+const LOAD_DATE_ONLY_FIELDS = new Set(['created_at']);
 
 const SUPABASE_UPDATE_METHOD_BY_ENTITY = {
     car: 'updateCar',
     location: 'updateLocation',
     company: 'updateCompany',
     load: 'updateLoad',
-    user: 'updateUser'
+    user: 'updateUser',
+    booking: 'updateBooking'
 };
 
 const LOCATION_REQUIRED_FIELDS = new Set(['address_line1', 'city', 'country_code']);
@@ -550,7 +566,7 @@ class SyncEngine {
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
 
                     const linkChanged = this.normalizeId(company.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
-                    await this.ensureSupabaseAirtableId(company, updatedRecord.airtable_id, 'company');
+                    await this.ensureSupabaseAirtableMetadata(company, updatedRecord, 'company');
                     if (linkChanged && action === 'unchanged') {
                         action = 'updated';
                     }
@@ -561,7 +577,7 @@ class SyncEngine {
                     const createdRecord = await this.airtableCompanies.createRecord(createPayload);
                     airtableBySupabaseId.set(company.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
-                    await this.ensureSupabaseAirtableId(company, createdRecord.airtable_id, 'company');
+                    await this.ensureSupabaseAirtableMetadata(company, createdRecord, 'company');
                     this.applySyncResult(stats, { action: 'created' });
                 }
 
@@ -659,7 +675,7 @@ class SyncEngine {
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
 
                     const linkChanged = this.normalizeId(user.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
-                    await this.ensureSupabaseAirtableId(user, updatedRecord.airtable_id, 'user');
+                    await this.ensureSupabaseAirtableMetadata(user, updatedRecord, 'user');
                     if (linkChanged && action === 'unchanged') {
                         action = 'updated';
                     }
@@ -670,7 +686,7 @@ class SyncEngine {
                     const createdRecord = await this.airtableUsers.createRecord(createPayload);
                     airtableBySupabaseId.set(user.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
-                    await this.ensureSupabaseAirtableId(user, createdRecord.airtable_id, 'user');
+                    await this.ensureSupabaseAirtableMetadata(user, createdRecord, 'user');
                     this.applySyncResult(stats, { action: 'created' });
                 }
 
@@ -797,7 +813,7 @@ class SyncEngine {
                     }
 
                     const linkChanged = this.normalizeId(load.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
-                    await this.ensureSupabaseAirtableId(load, updatedRecord.airtable_id, 'load');
+                    await this.ensureSupabaseAirtableMetadata(load, updatedRecord, 'load');
                     if (linkChanged && action === 'unchanged') {
                         action = 'updated';
                     }
@@ -814,7 +830,7 @@ class SyncEngine {
                             airtableByLoadNumber.set(normalized, createdRecord);
                         }
                     }
-                    await this.ensureSupabaseAirtableId(load, createdRecord.airtable_id, 'load');
+                    await this.ensureSupabaseAirtableMetadata(load, createdRecord, 'load');
                     this.applySyncResult(stats, { action: 'created' });
                 }
 
@@ -907,7 +923,7 @@ class SyncEngine {
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
 
                     const linkChanged = this.normalizeId(car.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
-                    await this.ensureSupabaseAirtableId(car, updatedRecord.airtable_id, 'car');
+                    await this.ensureSupabaseAirtableMetadata(car, updatedRecord, 'car');
                     if (linkChanged && action === 'unchanged') {
                         action = 'updated';
                     }
@@ -918,7 +934,7 @@ class SyncEngine {
                     const createdRecord = await this.airtableCars.createRecord(createPayload);
                     airtableBySupabaseId.set(car.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
-                    await this.ensureSupabaseAirtableId(car, createdRecord.airtable_id, 'car');
+                    await this.ensureSupabaseAirtableMetadata(car, createdRecord, 'car');
                     this.applySyncResult(stats, { action: 'created' });
                 }
 
@@ -1002,7 +1018,7 @@ class SyncEngine {
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
 
                     const linkChanged = this.normalizeId(location.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
-                    await this.ensureSupabaseAirtableId(location, updatedRecord.airtable_id, 'location');
+                    await this.ensureSupabaseAirtableMetadata(location, updatedRecord, 'location');
                     if (linkChanged && action === 'unchanged') {
                         action = 'updated';
                     }
@@ -1013,7 +1029,7 @@ class SyncEngine {
                     const createdRecord = await this.airtableLocations.createRecord(createPayload);
                     airtableBySupabaseId.set(location.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
-                    await this.ensureSupabaseAirtableId(location, createdRecord.airtable_id, 'location');
+                    await this.ensureSupabaseAirtableMetadata(location, createdRecord, 'location');
                     this.applySyncResult(stats, { action: 'created' });
                 }
 
@@ -1176,7 +1192,7 @@ class SyncEngine {
                     airtableByAirtableId.set(updatedRecord.airtable_id, updatedRecord);
 
                     const linkChanged = this.normalizeId(booking.airtable_id) !== this.normalizeId(updatedRecord.airtable_id);
-                    await this.ensureSupabaseAirtableId(booking, updatedRecord.airtable_id, 'booking');
+                    await this.ensureSupabaseAirtableMetadata(booking, updatedRecord, 'booking');
                     if (linkChanged && action === 'unchanged') {
                         action = 'updated';
                     }
@@ -1187,7 +1203,7 @@ class SyncEngine {
                     const createdRecord = await this.airtableBookings.createRecord(createPayload);
                     airtableBySupabaseId.set(booking.id, createdRecord);
                     airtableByAirtableId.set(createdRecord.airtable_id, createdRecord);
-                    await this.ensureSupabaseAirtableId(booking, createdRecord.airtable_id, 'booking');
+                    await this.ensureSupabaseAirtableMetadata(booking, createdRecord, 'booking');
                     this.applySyncResult(stats, { action: 'created' });
                 }
 
@@ -1762,8 +1778,8 @@ class SyncEngine {
             }
         });
 
-        const primaryFieldValue = record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id);
-        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', primaryFieldValue);
+        const nameLabelSource = this.resolveAirtableNameLabel(record);
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', nameLabelSource);
         if (airtableNameLabel !== undefined) {
             payload.airtable_id_name_label = airtableNameLabel;
         }
@@ -1811,6 +1827,7 @@ class SyncEngine {
                 payload[field] = [];
             }
         });
+        this.applyDateOnlyFormatting(payload, CAR_DATE_ONLY_FIELDS);
         return payload;
     }
 
@@ -1829,8 +1846,8 @@ class SyncEngine {
             }
         });
 
-        const primaryFieldValue = record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id);
-        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', primaryFieldValue);
+        const nameLabelSource = this.resolveAirtableNameLabel(record);
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', nameLabelSource);
         if (airtableNameLabel !== undefined) {
             payload.airtable_id_name_label = airtableNameLabel;
         }
@@ -1857,6 +1874,7 @@ class SyncEngine {
                 payload[field] = value;
             }
         });
+        this.applyDateOnlyFormatting(payload, LOCATION_DATE_ONLY_FIELDS);
         return payload;
     }
 
@@ -1875,7 +1893,7 @@ class SyncEngine {
             }
         });
 
-        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id));
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', this.resolveAirtableNameLabel(record));
         if (airtableNameLabel !== undefined) {
             payload.airtable_id_name_label = airtableNameLabel;
         }
@@ -1940,7 +1958,7 @@ class SyncEngine {
             }
         });
 
-        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id));
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', this.resolveAirtableNameLabel(record));
         if (airtableNameLabel !== undefined) {
             payload.airtable_id_name_label = airtableNameLabel;
         }
@@ -1987,6 +2005,7 @@ class SyncEngine {
                 console.warn(`[sync] Supabase user ${user.id} references ${field} ${supabaseCompanyId}, which is missing an Airtable record.`);
             }
         });
+        this.applyDateOnlyFormatting(payload, USER_DATE_ONLY_FIELDS);
         return payload;
     }
 
@@ -2025,7 +2044,7 @@ class SyncEngine {
             }
         });
 
-        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id));
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', this.resolveAirtableNameLabel(record));
         if (airtableNameLabel !== undefined) {
             payload.airtable_id_name_label = airtableNameLabel;
         }
@@ -2073,6 +2092,11 @@ class SyncEngine {
                 payload[field] = [];
             }
         });
+        this.applyDateOnlyFormatting(payload, LOAD_DATE_ONLY_FIELDS);
+
+        if (Object.prototype.hasOwnProperty.call(payload, 'load_number')) {
+            delete payload.load_number;
+        }
         return payload;
     }
 
@@ -2131,7 +2155,7 @@ class SyncEngine {
             }
         });
 
-        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', record.id !== undefined ? record.id : (record.raw_fields && record.raw_fields.id));
+        const airtableNameLabel = this.normalizeValue('airtable_id_name_label', this.resolveAirtableNameLabel(record));
         if (airtableNameLabel !== undefined) {
             payload.airtable_id_name_label = airtableNameLabel;
         }
@@ -2158,6 +2182,8 @@ class SyncEngine {
                 payload[field] = value;
             }
         });
+
+        this.applyDateOnlyFormatting(payload, BOOKING_DATE_ONLY_FIELDS);
 
         const loadAirtableIdBySupabaseId = options.loadAirtableIdBySupabaseId instanceof Map
             ? options.loadAirtableIdBySupabaseId
@@ -2358,8 +2384,8 @@ class SyncEngine {
     }
 
 
-    async ensureSupabaseAirtableId(entity, airtableId, entityType) {
-        if (!airtableId || entity.airtable_id === airtableId) {
+    async ensureSupabaseAirtableMetadata(entity, airtableRecord, entityType) {
+        if (!entity || !airtableRecord) {
             return;
         }
 
@@ -2368,7 +2394,27 @@ class SyncEngine {
             return;
         }
 
-        const updates = { airtable_id: airtableId };
+        const airtableId = this.normalizeId(airtableRecord.airtable_id || airtableRecord.id);
+        const airtableLabel = this.normalizeId(
+            airtableRecord.airtable_id_name_label !== undefined && airtableRecord.airtable_id_name_label !== null
+                ? airtableRecord.airtable_id_name_label
+                : this.resolveAirtableNameLabel(airtableRecord)
+        ) || null;
+
+        const updates = {};
+
+        if (airtableId && airtableId !== this.normalizeId(entity.airtable_id)) {
+            updates.airtable_id = airtableId;
+        }
+
+        if (airtableLabel !== null && airtableLabel !== undefined && airtableLabel !== entity.airtable_id_name_label) {
+            updates.airtable_id_name_label = airtableLabel;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return;
+        }
+
         const updated = await this.supabase[methodName](entity.id, updates);
         Object.assign(entity, updated);
     }
@@ -2428,6 +2474,79 @@ class SyncEngine {
             }
         });
     }
+
+    applyDateOnlyFormatting(payload, fieldSet) {
+        if (!payload || typeof payload !== 'object' || !(fieldSet instanceof Set) || fieldSet.size === 0) {
+            return;
+        }
+
+        fieldSet.forEach(field => {
+            if (!Object.prototype.hasOwnProperty.call(payload, field)) {
+                return;
+            }
+
+            const currentValue = payload[field];
+            if (currentValue === null || currentValue === undefined || currentValue === '') {
+                return;
+            }
+
+            const formatted = this.formatDateForAirtable(currentValue);
+            if (formatted !== null) {
+                payload[field] = formatted;
+            }
+        });
+    }
+
+    resolveAirtableNameLabel(record) {
+        if (!record || typeof record !== 'object') {
+            return undefined;
+        }
+
+        if (record.airtable_id_name_label !== undefined && record.airtable_id_name_label !== null) {
+            return record.airtable_id_name_label;
+        }
+
+        if (record.id !== undefined && record.id !== null) {
+            return record.id;
+        }
+
+        if (record.raw_fields && record.raw_fields.id !== undefined) {
+            return record.raw_fields.id;
+        }
+
+        return record.airtable_id;
+    }
+
+    formatDateForAirtable(value, options = {}) {
+        if (value === undefined || value === null) {
+            return null;
+        }
+
+        const includeTime = options.includeTime === true;
+        let date;
+
+        if (value instanceof Date) {
+            date = value;
+        } else if (typeof value === 'number') {
+            date = new Date(value);
+        } else if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+            date = new Date(trimmed);
+        } else {
+            return null;
+        }
+
+        if (Number.isNaN(date.getTime())) {
+            return null;
+        }
+
+        const iso = date.toISOString();
+        return includeTime ? iso : iso.split('T')[0];
+    }
+
     normalizeValue(field, value, options = {}) {
         const numericFields = options.numericFields instanceof Set
             ? options.numericFields
@@ -2599,22 +2718,3 @@ function mergeSyncRules(defaultRules, overrides) {
 
     return result;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

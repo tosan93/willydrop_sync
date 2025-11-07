@@ -28,6 +28,7 @@ class AirtableClient {
 
         this.fieldIdByKey = {};
         this.fieldNameByKey = {};
+        this.fieldIdByName = {};
         this.keysWithMappings = new Set();
 
         Object.entries(this.fieldMapping).forEach(([key, value]) => {
@@ -43,6 +44,9 @@ class AirtableClient {
                 }
                 if (typeof value.name === 'string') {
                     this.fieldNameByKey[key] = value.name;
+                    if (typeof value.id === 'string') {
+                        this.fieldIdByName[value.name] = value.id;
+                    }
                 }
             }
 
@@ -95,22 +99,74 @@ class AirtableClient {
     }
 
     async createRecord(data) {
-        const { preferred, fallback } = this.prepareWritableFields(data);
+        const payloads = this.prepareWritableFields(data);
+        return this.createWithPayloads(payloads);
+    }
+
+    async updateRecord(recordId, data) {
+        const payloads = this.prepareWritableFields(data);
+        const hasPreferred = Object.keys(payloads.preferred).length > 0;
+        const hasFallback = Object.keys(payloads.fallback).length > 0;
+
+        if (!hasPreferred && !hasFallback) {
+            const record = await this.table.find(recordId);
+            return this.normalizeRecord(record);
+        }
+
+        return this.updateWithPayloads(recordId, payloads);
+    }
+
+    async createWithPayloads(payloads, options = {}) {
+        const allowSanitize = options.allowSanitize !== false;
+        const preferred = payloads.preferred || {};
+        const fallback = payloads.fallback || {};
+        const hasPreferred = Object.keys(preferred).length > 0;
+        const hasFallback = Object.keys(fallback).length > 0;
+
+        if (!hasPreferred && !hasFallback) {
+            throw new Error('Cannot create Airtable record: payload is empty.');
+        }
+
+        if (hasPreferred) {
+            try {
+                const record = await this.table.create(preferred);
+                return this.normalizeRecord(record);
+            } catch (error) {
+                if (this.shouldRetryWithIds(error) && hasFallback) {
+                    try {
+                        const record = await this.table.create(fallback);
+                        return this.normalizeRecord(record);
+                    } catch (fallbackError) {
+                        if (allowSanitize && this.removeInvalidFieldsFromPayload(fallbackError, preferred, fallback)) {
+                            return this.createWithPayloads({ preferred, fallback }, options);
+                        }
+                        throw fallbackError;
+                    }
+                }
+
+                if (allowSanitize && this.removeInvalidFieldsFromPayload(error, preferred, fallback)) {
+                    return this.createWithPayloads({ preferred, fallback }, options);
+                }
+
+                throw error;
+            }
+        }
 
         try {
-            const record = await this.table.create(preferred);
+            const record = await this.table.create(fallback);
             return this.normalizeRecord(record);
         } catch (error) {
-            if (this.shouldRetryWithIds(error) && Object.keys(fallback).length > 0) {
-                const record = await this.table.create(fallback);
-                return this.normalizeRecord(record);
+            if (allowSanitize && this.removeInvalidFieldsFromPayload(error, preferred, fallback)) {
+                return this.createWithPayloads({ preferred, fallback }, options);
             }
             throw error;
         }
     }
 
-    async updateRecord(recordId, data) {
-        const { preferred, fallback } = this.prepareWritableFields(data);
+    async updateWithPayloads(recordId, payloads, options = {}) {
+        const allowSanitize = options.allowSanitize !== false;
+        const preferred = payloads.preferred || {};
+        const fallback = payloads.fallback || {};
         const hasPreferred = Object.keys(preferred).length > 0;
         const hasFallback = Object.keys(fallback).length > 0;
 
@@ -119,21 +175,45 @@ class AirtableClient {
             return this.normalizeRecord(record);
         }
 
-        if (!hasPreferred && hasFallback) {
-            const record = await this.table.update(recordId, fallback);
-            return this.normalizeRecord(record);
+        if (hasPreferred) {
+            try {
+                const record = await this.table.update(recordId, preferred);
+                return this.normalizeRecord(record);
+            } catch (error) {
+                if (this.shouldRetryWithIds(error) && hasFallback) {
+                    try {
+                        const record = await this.table.update(recordId, fallback);
+                        return this.normalizeRecord(record);
+                    } catch (fallbackError) {
+                        if (allowSanitize && this.removeInvalidFieldsFromPayload(fallbackError, preferred, fallback)) {
+                            return this.updateWithPayloads(recordId, { preferred, fallback }, options);
+                        }
+                        throw fallbackError;
+                    }
+                }
+
+                if (allowSanitize && this.removeInvalidFieldsFromPayload(error, preferred, fallback)) {
+                    return this.updateWithPayloads(recordId, { preferred, fallback }, options);
+                }
+
+                throw error;
+            }
         }
 
-        try {
-            const record = await this.table.update(recordId, preferred);
-            return this.normalizeRecord(record);
-        } catch (error) {
-            if (this.shouldRetryWithIds(error) && hasFallback) {
+        if (hasFallback) {
+            try {
                 const record = await this.table.update(recordId, fallback);
                 return this.normalizeRecord(record);
+            } catch (error) {
+                if (allowSanitize && this.removeInvalidFieldsFromPayload(error, preferred, fallback)) {
+                    return this.updateWithPayloads(recordId, { preferred, fallback }, options);
+                }
+                throw error;
             }
-            throw error;
         }
+
+        const record = await this.table.find(recordId);
+        return this.normalizeRecord(record);
     }
 
     async deleteRecord(recordId) {
@@ -252,6 +332,153 @@ class AirtableClient {
         });
 
         return { preferred, fallback };
+    }
+
+    extractInvalidFieldNames(error) {
+        if (!error) {
+            return [];
+        }
+
+        const texts = [];
+        const enqueueText = value => {
+            if (!value) {
+                return;
+            }
+            if (typeof value === 'string') {
+                texts.push(value);
+            } else if (Array.isArray(value)) {
+                value.forEach(item => enqueueText(item));
+            }
+        };
+
+        enqueueText(error.message);
+        enqueueText(error.error);
+        enqueueText(error.body);
+        enqueueText(error.details);
+
+        if (error.error && typeof error.error === 'object') {
+            enqueueText(error.error.message);
+            enqueueText(error.error.error);
+            enqueueText(error.error.body);
+
+            if (Array.isArray(error.error.errors)) {
+                error.error.errors.forEach(entry => {
+                    if (typeof entry === 'string') {
+                        enqueueText(entry);
+                    } else if (entry && typeof entry.message === 'string') {
+                        enqueueText(entry.message);
+                    }
+                });
+            }
+        }
+
+        const patterns = [
+            /Field ["']([^"']+)["'] cannot accept the provided value/gi,
+            /Field ["']([^"']+)["'].*invalid/gi,
+            /"([^"']+)" cannot accept the provided value/gi,
+            /Invalid value for field ["']([^"']+)["']/gi,
+            /Field ["']([^"']+)["']/gi
+        ];
+
+        const fieldNames = new Set();
+
+        texts.forEach(text => {
+            if (typeof text !== 'string' || text.length === 0) {
+                return;
+            }
+            patterns.forEach(pattern => {
+                pattern.lastIndex = 0;
+                let match;
+                while ((match = pattern.exec(text)) !== null) {
+                    const candidate = match[1] && match[1].trim();
+                    if (candidate) {
+                        fieldNames.add(candidate);
+                    }
+                }
+            });
+        });
+
+        if (typeof error.field === 'string' && error.field.trim()) {
+            fieldNames.add(error.field.trim());
+        }
+        if (error.error && typeof error.error.field === 'string' && error.error.field.trim()) {
+            fieldNames.add(error.error.field.trim());
+        }
+
+        return Array.from(fieldNames);
+    }
+
+    removeFieldFromPayload(payload, fieldName) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        if (fieldName === undefined || fieldName === null) {
+            return false;
+        }
+
+        const targetName = typeof fieldName === 'string'
+            ? fieldName
+            : String(fieldName);
+
+        if (!targetName) {
+            return false;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, targetName)) {
+            delete payload[targetName];
+            return true;
+        }
+
+        const lowerTarget = targetName.toLowerCase();
+        const matchKey = Object.keys(payload).find(key => key.toLowerCase() === lowerTarget);
+        if (matchKey) {
+            delete payload[matchKey];
+            return true;
+        }
+
+        return false;
+    }
+
+    removeInvalidFieldsFromPayload(error, preferredPayload = {}, fallbackPayload = {}) {
+        const invalidFields = this.extractInvalidFieldNames(error);
+        if (invalidFields.length === 0) {
+            return false;
+        }
+
+        let removedAny = false;
+        const removedNames = new Set();
+
+        invalidFields.forEach(fieldName => {
+            const trimmed = typeof fieldName === 'string' ? fieldName.trim() : '';
+            if (!trimmed) {
+                return;
+            }
+
+            if (this.removeFieldFromPayload(preferredPayload, trimmed)) {
+                removedAny = true;
+                removedNames.add(trimmed);
+            }
+
+            if (this.removeFieldFromPayload(fallbackPayload, trimmed)) {
+                removedAny = true;
+                removedNames.add(trimmed);
+            }
+
+            const mappedId = this.fieldIdByName[trimmed];
+            if (mappedId && this.removeFieldFromPayload(fallbackPayload, mappedId)) {
+                removedAny = true;
+                removedNames.add(trimmed);
+            }
+        });
+
+        if (removedAny) {
+            const label = [...removedNames].join(', ') || 'unknown fields';
+            const reason = (error && error.message) ? ` Reason: ${error.message}` : '';
+            console.warn(`[airtable] Dropped invalid field(s): ${label}. Airtable rejected the provided value.${reason}`);
+        }
+
+        return removedAny;
     }
 
     shouldRetryWithIds(error) {

@@ -1,3 +1,4 @@
+const config = require('./config');
 const SyncEngine = require('./sync-engine');
 
 const args = process.argv.slice(2);
@@ -16,6 +17,7 @@ const syncEngine = new SyncEngine();
 
 async function runSync() {
     try {
+        console.log(`[sync] Environment: ${config.environment}`);
         console.log(`[sync] Starting sync for tables: ${tables.join(', ')}`);
         await syncEngine.runFullSync('manual', tables);
         console.log('[sync] Sync completed successfully');
