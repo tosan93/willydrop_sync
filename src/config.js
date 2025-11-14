@@ -272,6 +272,7 @@ module.exports = {
         locationsTableName: resolveEnvVar('SUPABASE_LOCATIONS_TABLE', { fallback: 'locations' }),
         companiesTableName: resolveEnvVar('SUPABASE_COMPANIES_TABLE', { fallback: 'companies' }),
         loadsTableName: resolveEnvVar('SUPABASE_LOADS_TABLE', { fallback: 'loads' }),
+        loadCarsTableName: resolveEnvVar('SUPABASE_LOAD_CARS_TABLE', { fallback: 'load_cars' }),
         usersTableName: resolveEnvVar('SUPABASE_USERS_TABLE', { fallback: 'users' }),
         bookingsTableName: resolveEnvVar('SUPABASE_BOOKINGS_TABLE', { fallback: 'bookings' }),
         requestsTableName: resolveEnvVar('SUPABASE_REQUESTS_TABLE', { fallback: 'requests' })

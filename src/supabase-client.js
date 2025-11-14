@@ -12,6 +12,7 @@ class SupabaseClient {
         this.locationsTableName = config.supabase.locationsTableName || 'locations';
         this.companiesTableName = config.supabase.companiesTableName || 'companies';
         this.loadsTableName = config.supabase.loadsTableName || 'loads';
+        this.loadCarsTableName = config.supabase.loadCarsTableName || 'load_cars';
         this.usersTableName = config.supabase.usersTableName || 'users';
         this.bookingsTableName = config.supabase.bookingsTableName || 'bookings';
         this.requestsTableName = config.supabase.requestsTableName || 'requests';
@@ -55,6 +56,33 @@ class SupabaseClient {
 
         if (error) throw error;
         return data || null;
+    }
+
+    async getCarsByIds(ids = []) {
+        const uniqueIds = [...new Set(
+            (ids || [])
+                .map(id => {
+                    if (typeof id === 'string') {
+                        return id.trim();
+                    }
+                    if (id === null || id === undefined) {
+                        return '';
+                    }
+                    return String(id).trim();
+                })
+                .filter(value => value.length > 0)
+        )];
+        if (uniqueIds.length === 0) {
+            return [];
+        }
+
+        const { data, error } = await this.client
+            .from(this.carsTableName)
+            .select('*')
+            .in('id', uniqueIds);
+
+        if (error) throw error;
+        return data || [];
     }
 
     async createCar(car) {
@@ -296,6 +324,34 @@ class SupabaseClient {
 
         if (error) throw error;
         return data || null;
+    }
+
+    async getLoadCarsByLoadIds(loadIds = []) {
+        const uniqueLoadIds = [...new Set(
+            (loadIds || [])
+                .map(id => {
+                    if (typeof id === 'string') {
+                        return id.trim();
+                    }
+                    if (id === null || id === undefined) {
+                        return '';
+                    }
+                    return String(id).trim();
+                })
+                .filter(value => value.length > 0)
+        )];
+
+        if (uniqueLoadIds.length === 0) {
+            return [];
+        }
+
+        const { data, error } = await this.client
+            .from(this.loadCarsTableName)
+            .select('*')
+            .in('load_id', uniqueLoadIds);
+
+        if (error) throw error;
+        return data || [];
     }
 
     async createLoad(load) {

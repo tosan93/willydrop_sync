@@ -2,7 +2,7 @@ const config = require('./config');
 const SyncEngine = require('./sync-engine');
 
 const args = process.argv.slice(2);
-const validTables = ['cars', 'locations', 'companies', 'users', 'loads', 'bookings'];
+const validTables = ['cars', 'locations', 'companies', 'users', 'loads', 'bookings', 'requests'];
 const tables = args.length > 0 ? args : validTables;
 
 // Validate table names

@@ -96,6 +96,7 @@ module.exports = {
 
         // linked fields
         carrier_id: { id: 'fldT1WDvvLudL1ByU', name: 'carrier_id' },
+        load_cars: { id: 'fldo9MhACxZtcF97f', name: 'load_cars' }, // Linked to Cars; SB -> AT only via load_cars rows with is_assigned = true
 
         // special fields
         supabase_id: { id: 'fldFgtqw2TXJPyAHr', name: 'supabase_id' },
@@ -141,13 +142,11 @@ module.exports = {
         airtable_id_name_label: { id: 'fld0BuCtWfnfhzg6E', name: 'id_bookings' }
     },
     requests: {
-        // value fields
-        customer_id: { id: 'fldrEE1UQjpHyU158', name: 'customer_id' },
-        created_at: { id: null, name: 'created_at' },
-
+        // linked fields - airtable link special treatment
+        customer_id: { id: 'fldrEE1UQjpHyU158', name: 'customer_id' }, // Linked to Companies
         // special fields
         supabase_id: { id: 'flddTbOVnrSdCr0eF', name: 'supabase_id' },
-        airtable_id: { id: null, name: 'airtable_id' },
+        airtable_id: { id: null, name: 'airtable_id' }, // Derived from Airtable record id (AT -> SB only)
         airtable_id_name_label: { id: 'fldlzkwcYqq3CpLxz', name: 'id_requests' }
     }
 };
